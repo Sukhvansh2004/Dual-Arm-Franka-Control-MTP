@@ -84,7 +84,7 @@ class ArmController:
         # It's stored in column-major order, so we reshape and transpose.
         self.current_transform = np.transpose(np.reshape(msg.O_T_EE, (4, 4)))
 
-    def move_to_pose(self, pose_stamped, tolerance=0.2, timeout=15.0):
+    def move_to_pose(self, pose_stamped, tolerance=0.3, timeout=15.0):
         """
         Moves the arm to a target pose and waits until it arrives.
         

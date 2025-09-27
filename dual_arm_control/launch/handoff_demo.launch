@@ -12,6 +12,8 @@
   <arg name="use_suction_gripper_0" default="false" />
   <arg name="use_suction_gripper_1" default="true" />
 
+  <param name="/is_simulation" value="true" />
+
   <include file="$(find franka_mujoco)/launch/dual_panda.launch">
     <arg name="rviz" value="$(arg rviz)" />
     <arg name="use_gripper" value="true" />
@@ -25,13 +27,24 @@
     <arg name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
   </include>
 
-  <node name="handover_sequence_controller"
+  <!-- <node name="handover_sequence_controller"
         pkg="dual_arm_control"
         type="handover_sequence.py"
         output="screen"
         launch-prefix="bash -c 'sleep 5; $0 $@' ">
     <param name="object_pos_x" value="$(arg object_x)" />
     <param name="object_pos_y" value="$(arg object_y)" />
+    <param name="use_suction_gripper_0" value="$(arg use_suction_gripper_0)" />
+    <param name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
+  </node> -->
+
+  <node name="handover_sequence_controller"
+        pkg="dual_arm_control"
+        type="gripper_move.py"
+        output="screen"
+        launch-prefix="bash -c 'sleep 5; $0 $@' ">
+    <param name="use_suction_gripper_0" value="false" />
+    <param name="use_suction_gripper_1" value="true" />
   </node>
 
 </launch>
