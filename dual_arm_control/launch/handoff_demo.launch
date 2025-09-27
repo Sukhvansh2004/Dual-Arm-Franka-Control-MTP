@@ -9,6 +9,8 @@
   <arg name="scene_xml" default="$(find dual_arm_control)/worlds/dual_panda_with_object.xml.xacro" />
   <arg name="use_xacro" default="true" />
 
+  <arg name="use_suction_gripper_0" default="false" />
+  <arg name="use_suction_gripper_1" default="true" />
 
   <include file="$(find franka_mujoco)/launch/dual_panda.launch">
     <arg name="rviz" value="$(arg rviz)" />
@@ -19,6 +21,8 @@
     <arg name="interactive_marker" value="false" />
     <arg name="use_sim_time" value="true" />
     <arg name="use_xacro" value="true" />
+    <arg name="use_suction_gripper_0" value="$(arg use_suction_gripper_0)" />
+    <arg name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
   </include>
 
   <node name="handover_sequence_controller"
