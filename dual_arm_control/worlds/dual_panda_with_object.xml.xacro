@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<mujoco xmlns:xacro="http://www.ros.org/wiki/xacro" model="Dual Panda Scene with Object">
+    <option timestep="0.001" gravity="0 0 -9.81" cone="elliptic" />
+    <size njmax="500" nconmax="100" />
+    <compiler angle="radian" />
+
+    <xacro:arg name="object_x" default="0.0" />
+    <xacro:arg name="object_y" default="0.4" />
+    <xacro:arg name="object_z" default="0.04" />
+
+    <xacro:include filename="$(find franka_mujoco)/assets/xacro/panda.mujoco.xacro" />
+    <xacro:include filename="$(find dual_arm_control)/worlds/object.xacro" />
+
+    <visual>
+        <headlight ambient="0.4 0.4 0.4" diffuse="0.4 0.4 0.4" specular="0.0 0.0 0.0" active="1" />
+    </visual>
+    <asset>
+        <texture builtin="checker" height="512" name="texplane" rgb1=".2 .3 .4" rgb2=".1 .15 .2" type="2d" width="512" />
+        <material name="MatPlane" reflectance="0.05" shininess="0.01" specular="0.01" texrepeat="1 1" texture="texplane" texuniform="true" />
+    </asset>
+
+    <worldbody>
+        <light pos="0 0 1000" castshadow="false" />
+        <geom name="ground_plane" type="plane" size="5 5 10" material="MatPlane" rgba="1 1 1 1"/>
+    </worldbody>
+
+    <worldbody>
+        <xacro:panda_robot name="L_panda" pos="-0.5 0 0" rot="0 0 1.57" />
+        <xacro:panda_robot name="R_panda" pos="0.5 0 0" rot="0 0 1.57" />
+        <xacro:graspable_box name="object_to_grasp" x="$(arg object_x)" y="$(arg object_y)" z="$(arg object_z)" />
+    </worldbody>
+
+    <xacro:panda_extra name="L_panda" />
+    <xacro:panda_extra name="R_panda" />
+</mujoco>
