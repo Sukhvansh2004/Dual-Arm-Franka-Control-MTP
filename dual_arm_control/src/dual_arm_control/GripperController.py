@@ -122,7 +122,7 @@ class GripperController:
                 return False
 
             self._update_attached_object_pose()
-            self.update_timer = rospy.Timer(rospy.Duration(0.005), self._update_attached_object_pose)
+            self.update_timer = rospy.Timer(rospy.Duration(0.001), self._update_attached_object_pose)
             rospy.loginfo("Object successfully attached to gripper.")
             return True
         else:
