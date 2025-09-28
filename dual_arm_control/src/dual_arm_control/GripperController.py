@@ -7,7 +7,7 @@ import tf.transformations as tft
 import numpy as np
 from franka_gripper.msg import GraspAction, GraspGoal, MoveAction, MoveGoal
 from std_msgs.msg import Bool
-from geometry_msgs.msg import PoseStamped, TwistStamped, Pose, Point, Quaternion, Twist, Vector3
+from geometry_msgs.msg import Pose, Point, Quaternion, Twist, Vector3
 
 # Import both Get and Set BodyState services and messages
 from mujoco_ros_msgs.srv import SetBodyState, SetBodyStateRequest, GetBodyState, GetBodyStateRequest
@@ -122,7 +122,7 @@ class GripperController:
                 return False
 
             self._update_attached_object_pose()
-            self.update_timer = rospy.Timer(rospy.Duration(0.02), self._update_attached_object_pose)
+            self.update_timer = rospy.Timer(rospy.Duration(0.005), self._update_attached_object_pose)
             rospy.loginfo("Object successfully attached to gripper.")
             return True
         else:
@@ -157,7 +157,7 @@ class GripperController:
 
             T_world_object = np.dot(T_world_tcp, self.T_tcp_object)
             
-            pos = tft.translation_from_matrix(T_world_object)
+            pos = tft.translation_from_matrix(T_world_tcp)
             quat = tft.quaternion_from_matrix(T_world_object)
 
             req = SetBodyStateRequest()
@@ -179,14 +179,14 @@ class GripperController:
             if not rospy.is_shutdown():
                  rospy.logwarn(f"TF exception while updating attached object pose: {e}")
 
-    def _grasp(self, width=0.0, force=10.0, speed=0.1):
+    def _grasp(self, width=0.0, force=10.0, speed=0.1, object_name=None):
         rospy.loginfo(f"Arm '{self.arm_id}' parallel gripper closing.")
         goal = GraspGoal(width=width, force=force, speed=speed)
         goal.epsilon.inner, goal.epsilon.outer = 0.05, 0.05
         self.grasp_client.send_goal(goal)
         return self.grasp_client.wait_for_result(rospy.Duration(5.0))
 
-    def _open(self, speed=0.1):
+    def _open(self, speed=0.1, object_name=None):
         rospy.loginfo(f"Arm '{self.arm_id}' parallel gripper opening.")
         goal = MoveGoal(width=0.08, speed=speed)
         self.move_client.send_goal(goal)

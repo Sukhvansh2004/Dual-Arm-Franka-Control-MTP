@@ -72,8 +72,7 @@ def main_sequence():
     pre_handoff_pose_world = create_pose(obj_x + 0.1, obj_y, 0.28, handoff_orientation_roll, handoff_orientation_pitch, handoff_orientation_yaw)
     handoff_pose_world = create_pose(obj_x, obj_y, 0.28, handoff_orientation_roll, handoff_orientation_pitch, handoff_orientation_yaw)
     place_x, place_y = -obj_x, -obj_y
-    pre_place_pose_world = create_pose(place_x, place_y, 0.3, place_orientation_roll, place_orientation_pitch, place_orientation_yaw)
-    place_pose_world = create_pose(place_x, place_y, 0.125, pick_orientation_roll, pick_orientation_pitch, pick_orientation_yaw)
+    place_pose_world = create_pose(place_x, place_y, 0.3, place_orientation_roll, place_orientation_pitch, place_orientation_yaw)
 
     # --- Start Sequence ---
     try:
@@ -118,17 +117,11 @@ def main_sequence():
         left_goal = transformer.transform_pose(ready_pose_left_world, 'L_panda_link0')
         if not left_goal: raise Exception("TF transform failed")
         while not left_arm.move_to_pose(left_goal, timeout=10.0): rospy.logwarn("Retrying left arm retract...")
-        right_goal = transformer.transform_pose(pre_place_pose_world, 'R_panda_link0')
-        if not right_goal: raise Exception("TF transform failed")
-        while not right_arm.move_to_pose(right_goal, timeout=10.0): rospy.logwarn("Retrying right arm pre-place pose...")
         right_goal = transformer.transform_pose(place_pose_world, 'R_panda_link0')
         if not right_goal: raise Exception("TF transform failed")
-        while not right_arm.move_to_pose(right_goal, timeout=10.0): rospy.logwarn("Retrying right arm place pose...")
+        while not right_arm.move_to_pose(right_goal, timeout=10.0): rospy.logwarn("Retrying right arm pre-place pose...")
         while not right_gripper.release(object_name=object_name_in_sim): rospy.logwarn("Retrying right gripper release...")
         rospy.sleep(1.0)
-        right_goal = transformer.transform_pose(pre_place_pose_world, 'R_panda_link0')
-        if not right_goal: raise Exception("TF transform failed")
-        while not right_arm.move_to_pose(right_goal, timeout=10.0): rospy.logwarn("Retrying right arm retract...")
 
         # 5. Return to Ready Poses
         rospy.loginfo("STAGE 5: Returning to ready poses.")

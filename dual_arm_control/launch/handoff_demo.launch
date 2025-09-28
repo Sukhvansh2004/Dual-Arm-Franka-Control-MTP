@@ -27,7 +27,7 @@
     <arg name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
   </include>
 
-  <!-- <node name="handover_sequence_controller"
+  <node name="handover_sequence_controller"
         pkg="dual_arm_control"
         type="handover_sequence.py"
         output="screen"
@@ -36,6 +36,6 @@
     <param name="object_pos_y" value="$(arg object_y)" />
     <param name="use_suction_gripper_0" value="$(arg use_suction_gripper_0)" />
     <param name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
-  </node> -->
+  </node>
 
 </launch>
