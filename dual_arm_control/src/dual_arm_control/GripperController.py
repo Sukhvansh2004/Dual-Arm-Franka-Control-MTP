@@ -87,6 +87,7 @@ class GripperController:
 
     def _suck(self, object_name):
         if self.is_simulation:
+            # TODO: Add a check if the object is near enough to the gripper
             if self.update_timer:
                 self.update_timer.shutdown()
             
@@ -157,7 +158,7 @@ class GripperController:
 
             T_world_object = np.dot(T_world_tcp, self.T_tcp_object)
             
-            pos = tft.translation_from_matrix(T_world_tcp)
+            pos = tft.translation_from_matrix(T_world_object)
             quat = tft.quaternion_from_matrix(T_world_object)
 
             req = SetBodyStateRequest()
