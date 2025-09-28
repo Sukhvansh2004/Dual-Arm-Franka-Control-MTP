@@ -38,13 +38,4 @@
     <param name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
   </node> -->
 
-  <node name="handover_sequence_controller"
-        pkg="dual_arm_control"
-        type="gripper_move.py"
-        output="screen"
-        launch-prefix="bash -c 'sleep 5; $0 $@' ">
-    <param name="use_suction_gripper_0" value="false" />
-    <param name="use_suction_gripper_1" value="true" />
-  </node>
-
 </launch>

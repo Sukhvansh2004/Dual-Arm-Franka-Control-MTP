@@ -68,6 +68,7 @@ def test_gripper_sequence():
         right_gripper.release()
     rate.sleep()
     
+    rospy.sleep(1.0) # Ensure all actions complete
     rospy.loginfo("Gripper test sequence finished.")
 
 if __name__ == '__main__':
