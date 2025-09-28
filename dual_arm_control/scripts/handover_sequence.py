@@ -48,7 +48,7 @@ def main_sequence():
     object_name_in_sim = "object_to_grasp"
 
     use_suction_left = rospy.get_param("~use_suction_gripper_0", False)
-    use_suction_right = rospy.get_param("~use_suction_gripper_1", False)
+    use_suction_right = rospy.get_param("~use_suction_gripper_1", True)
 
     # --- Initialization ---
     left_arm = ArmController('L_panda')
@@ -69,8 +69,8 @@ def main_sequence():
     pre_grasp_pose_world = create_pose(obj_x - 0.1, obj_y, 0.006, pick_orientation_roll, pick_orientation_pitch, pick_orientation_yaw)
     grasp_pose_world = create_pose(obj_x + 0.01, obj_y, 0.006, pick_orientation_roll, pick_orientation_pitch, pick_orientation_yaw)
     post_grasp_pose_world = create_pose(obj_x, obj_y, 0.3, pick_orientation_roll, pick_orientation_pitch, pick_orientation_yaw)
-    pre_handoff_pose_world = create_pose(obj_x + 0.25, obj_y, 0.28, handoff_orientation_roll, handoff_orientation_pitch, handoff_orientation_yaw)
-    handoff_pose_world = create_pose(obj_x + 0.1, obj_y, 0.28, handoff_orientation_roll, handoff_orientation_pitch, handoff_orientation_yaw)
+    pre_handoff_pose_world = create_pose(obj_x + 0.25, obj_y, 0.32, handoff_orientation_roll, handoff_orientation_pitch, handoff_orientation_yaw)
+    handoff_pose_world = create_pose(obj_x + 0.1, obj_y, 0.32, handoff_orientation_roll, handoff_orientation_pitch, handoff_orientation_yaw)
     place_x, place_y = -obj_x, -obj_y
     place_pose_world = create_pose(place_x, place_y, 0.3, place_orientation_roll, place_orientation_pitch, place_orientation_yaw)
 
