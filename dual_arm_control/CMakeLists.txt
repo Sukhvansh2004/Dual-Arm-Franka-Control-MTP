@@ -27,6 +27,7 @@ catkin_install_python(PROGRAMS
   scripts/gripper_move.py
   scripts/go_to_pose.py
   scripts/teleop_keyboard.py
+  scripts/grasp_prediction_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

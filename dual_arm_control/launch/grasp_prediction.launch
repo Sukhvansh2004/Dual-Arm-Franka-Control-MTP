@@ -1,0 +1,35 @@
+<launch>
+    <!-- 
+        Launch file for the Grasp Prediction Node.
+        This node uses the GraspGen library to predict grasp poses from sensor data.
+    -->
+
+    <!-- Arguments -->
+    <arg name="suction_gripper_config" default="$(find dual_arm_control)/../../GraspGenModels/checkpoints/graspgen_single_suction_cup_30mm.yml" />
+    <arg name="finger_gripper_config" default="$(find dual_arm_control)/../../GraspGenModels/checkpoints/graspgen_franka_panda.yml" />
+
+    <!-- Grasp Prediction Node -->
+    <node name="grasp_prediction_node" pkg="dual_arm_control" type="grasp_prediction_node.py" output="screen">
+        <!-- Parameters -->
+        <param name="suction_gripper_config" value="$(arg suction_gripper_config)" />
+        <param name="finger_gripper_config" value="$(arg finger_gripper_config)" />
+        
+        <!-- Optional parameters for tuning -->
+        <param name="collision_threshold" value="0.02" />
+        <param name="max_scene_points" value="8192" />
+        <param name="num_grasps" value="200" />
+        <param name="grasp_threshold" value="0.8" />
+
+        <!-- Remap topics if they are different from the defaults in the script -->
+        <!-- 
+        <remap from="/suction/camera/depth/image_raw" to="/your_suction_cam/depth/image_rect_raw" />
+        <remap from="/suction/camera/color/camera_info" to="/your_suction_cam/color/camera_info" />
+        <remap from="/suction/camera/segmentation_mask" to="/your_segmentation_node/suction/mask" />
+
+        <remap from="/gripper/camera/depth/image_raw" to="/your_gripper_cam/depth/image_rect_raw" />
+        <remap from="/gripper/camera/color/camera_info" to="/your_gripper_cam/color/camera_info" />
+        <remap from="/gripper/camera/segmentation_mask" to="/your_segmentation_node/gripper/mask" />
+        -->
+    </node>
+
+</launch>

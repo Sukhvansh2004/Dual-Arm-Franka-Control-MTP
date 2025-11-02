@@ -12,6 +12,9 @@
   <arg name="use_suction_gripper_0" default="false" />
   <arg name="use_suction_gripper_1" default="true" />
 
+  <arg name="arm_id_0" default="L_panda" />
+  <arg name="arm_id_1" default="R_panda" />
+  
   <param name="/is_simulation" value="true" />
 
   <include file="$(find franka_mujoco)/launch/dual_panda.launch">
@@ -25,6 +28,8 @@
     <arg name="use_xacro" value="true" />
     <arg name="use_suction_gripper_0" value="$(arg use_suction_gripper_0)" />
     <arg name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
+    <arg name="arm_id_0" value="$(arg arm_id_0)" />
+    <arg name="arm_id_1" value="$(arg arm_id_1)" />
   </include>
 
   <node name="handover_sequence_controller"
