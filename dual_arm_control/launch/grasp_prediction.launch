@@ -4,8 +4,8 @@
     <arg name="use_suction_gripper_0" default="false" />
     <arg name="use_suction_gripper_1" default="true" />
     
-    <arg name="suction_config" default="$(find dual_arm_control)/config/suction_cfg.yaml" />
-    <arg name="finger_config" default="$(find dual_arm_control)/config/panda_cfg.yaml" />
+    <arg name="suction_config" default="/home/sukhvansh/GraspGenModels/checkpoints/graspgen_single_suction_cup_30mm.yml" />
+    <arg name="finger_config" default="/home/sukhvansh/GraspGenModels/checkpoints/graspgen_franka_panda.yml" />
 
     <arg name="prediction_hz" default="0.5" />
     <arg name="collision_thresh" default="0.02" />
