@@ -1,35 +1,33 @@
 <launch>
-    <!-- 
-        Launch file for the Grasp Prediction Node.
-        This node uses the GraspGen library to predict grasp poses from sensor data.
-    -->
+    <arg name="arm_id_0" default="L_panda" />
+    <arg name="arm_id_1" default="R_panda" />
+    <arg name="use_suction_gripper_0" default="false" />
+    <arg name="use_suction_gripper_1" default="true" />
+    
+    <arg name="suction_config" default="$(find dual_arm_control)/config/suction_cfg.yaml" />
+    <arg name="finger_config" default="$(find dual_arm_control)/config/panda_cfg.yaml" />
 
-    <!-- Arguments -->
-    <arg name="suction_gripper_config" default="$(find dual_arm_control)/../../GraspGenModels/checkpoints/graspgen_single_suction_cup_30mm.yml" />
-    <arg name="finger_gripper_config" default="$(find dual_arm_control)/../../GraspGenModels/checkpoints/graspgen_franka_panda.yml" />
+    <arg name="prediction_hz" default="0.5" />
+    <arg name="collision_thresh" default="0.02" />
+    <arg name="grasp_thresh" default="0.8" />
 
-    <!-- Grasp Prediction Node -->
-    <node name="grasp_prediction_node" pkg="dual_arm_control" type="grasp_prediction_node.py" output="screen">
-        <!-- Parameters -->
-        <param name="suction_gripper_config" value="$(arg suction_gripper_config)" />
-        <param name="finger_gripper_config" value="$(arg finger_gripper_config)" />
+    <node name="grasp_prediction_node"
+          pkg="dual_arm_control" type="grasp_prediction_node.py" output="screen">
         
-        <!-- Optional parameters for tuning -->
-        <param name="collision_threshold" value="0.02" />
+        <param name="arm_id_0" value="$(arg arm_id_0)" />
+        <param name="arm_id_1" value="$(arg arm_id_1)" />
+        <param name="use_suction_gripper_0" value="$(arg use_suction_gripper_0)" />
+        <param name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
+
+        <param name="suction_gripper_config" value="$(arg suction_config)" />
+        <param name="finger_gripper_config" value="$(arg finger_config)" />
+        
+        <param name="prediction_hz" value="$(arg prediction_hz)" />
+        <param name="collision_threshold" value="$(arg collision_thresh)" />
+        <param name="grasp_threshold" value="$(arg grasp_thresh)" />
+        
         <param name="max_scene_points" value="8192" />
         <param name="num_grasps" value="200" />
-        <param name="grasp_threshold" value="0.8" />
-
-        <!-- Remap topics if they are different from the defaults in the script -->
-        <!-- 
-        <remap from="/suction/camera/depth/image_raw" to="/your_suction_cam/depth/image_rect_raw" />
-        <remap from="/suction/camera/color/camera_info" to="/your_suction_cam/color/camera_info" />
-        <remap from="/suction/camera/segmentation_mask" to="/your_segmentation_node/suction/mask" />
-
-        <remap from="/gripper/camera/depth/image_raw" to="/your_gripper_cam/depth/image_rect_raw" />
-        <remap from="/gripper/camera/color/camera_info" to="/your_gripper_cam/color/camera_info" />
-        <remap from="/gripper/camera/segmentation_mask" to="/your_segmentation_node/gripper/mask" />
-        -->
+        <param name="depth_ignore_threshold" value="0.02" />
     </node>
-
 </launch>
