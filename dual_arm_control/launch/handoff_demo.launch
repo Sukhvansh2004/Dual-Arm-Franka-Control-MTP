@@ -23,7 +23,7 @@
     <arg name="controller" value="$(arg controller)" />
     <arg name="unpause" value="true" />
     <arg name="scene_xml" value="$(arg scene_xml)" />
-    <arg name="interactive_marker" value="false" />
+    <arg name="interactive_marker" value="true" />
     <arg name="use_sim_time" value="true" />
     <arg name="use_xacro" value="true" />
     <arg name="use_suction_gripper_0" value="$(arg use_suction_gripper_0)" />

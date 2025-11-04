@@ -15,6 +15,7 @@
   <depend>franka_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>franka_mujoco</depend>
-
+  <depend>message_runtime</depend>
+  
 </package>
 
