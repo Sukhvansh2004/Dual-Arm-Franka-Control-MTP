@@ -9,7 +9,7 @@ import sys
 import traceback
 
 # --- All your GraspGen/FastSAM imports ---
-GRASPGEN_PATH = '/home/sukhvansh/GraspGen' # Make sure this is correct
+GRASPGEN_PATH = '/home/sukhvansh/GraspGen'
 if GRASPGEN_PATH not in sys.path:
     sys.path.append(GRASPGEN_PATH)
 
@@ -34,11 +34,8 @@ def transform_points(points, matrix):
     """
     Applies a 4x4 transformation matrix to a (N, 3) point cloud.
     """
-    # Convert (N, 3) points to (N, 4) homogeneous coordinates
     points_h = np.hstack((points, np.ones((points.shape[0], 1))))
-    # Apply transformation: (N, 4) @ (4, 4).T = (N, 4)
     points_transformed_h = points_h @ matrix.T
-    # Convert back to (N, 3)
     return points_transformed_h[:, :3]
 # --- END HELPER FUNCTION ---
 
@@ -50,10 +47,10 @@ class GraspPipelineServer:
     """
     def __init__(self, finger_cfg_path):
         print("Loading FastSAM model...")
-        self.sam_model = FastSAM('FastSAM-s.pt')
+        self.sam_model = FastSAM('FastSAM-x.pt') # Using 'x' model as in your example
         print("FastSAM model loaded.")
 
-        print(f"Loading HARECODED GraspGen finger model from: {finger_cfg_path}")
+        print(f"Loading HARDCODED GraspGen finger model from: {finger_cfg_path}")
         self.gripper_cfg = load_grasp_cfg(finger_cfg_path)
         self.gripper_sampler = GraspGenSampler(self.gripper_cfg)
         self.gripper_mesh = get_gripper_info(self.gripper_cfg.data.gripper_name).collision_mesh
@@ -66,7 +63,7 @@ class GraspPipelineServer:
         self.grasp_threshold = 0.8
         self.max_object_points = 20000 # Safety cap for memory
 
-    def run_prediction(self, color_image, depth_image, K, params):
+    def run_prediction(self, color_image, depth_image, K, params, text_prompt=None):
         """
         The main pipeline, simplified for one gripper.
         """
@@ -77,47 +74,90 @@ class GraspPipelineServer:
         num_grasps = params.get('num_grasps', self.num_grasps)
         collision_thresh = params.get('collision_threshold', self.collision_threshold)
 
-        # --- 2. Run FastSAM ---
-        results = self.sam_model.predict(source=color_image, device='cuda', retina_masks=True, imgsz=640, conf=0.4, iou=0.9, verbose=False)
+        # Create an empty mask template for failure cases
+        empty_mask = np.zeros((color_image.shape[0], color_image.shape[1]), dtype=np.uint8)
+        empty_return = {'grasps': np.array([]), 'mask': empty_mask}
+
+        # --- 2. Run FastSAM (UPDATED LOGIC) ---
+        predict_args = {
+            'source': color_image,
+            'device': 'cuda',
+            'retina_masks': True,
+            'imgsz': 640,
+            'conf': 0.4,
+            'iou': 0.9,
+            'verbose': False
+        }
+
+        if text_prompt: 
+            print(f"[Server] Running FastSAM with text prompt: '{text_prompt}'")
+            predict_args['texts'] = [text_prompt]
+        else:
+            print("[Server] Running FastSAM in 'everything' mode (no prompt).")
+        
+        results = self.sam_model.predict(**predict_args)
         
         if not results or len(results) == 0 or results[0].masks is None or len(results[0].masks) == 0:
             print("[Server] FastSAM did not detect any objects.")
-            return np.array([]) 
+            return empty_return
 
-        masks = results[0].masks.data.cpu().numpy()
-        largest_mask = np.zeros((color_image.shape[0], color_image.shape[1]), dtype=np.uint8)
-        max_area = 0
+        masks_data = results[0].masks.data.cpu().numpy()
+        final_mask_raw = np.zeros((color_image.shape[0], color_image.shape[1]), dtype=np.uint8)
 
-        for mask_data in masks:
-            resized_mask = cv2.resize(mask_data, (color_image.shape[1], color_image.shape[0]), interpolation=cv2.INTER_NEAREST)
-            binary_mask = (resized_mask > 0).astype(np.uint8)
-            area = np.sum(binary_mask)
-            if area > max_area:
-                max_area = area
-                largest_mask = binary_mask
-
-        if max_area == 0:
-            print("[Server] No valid masks found.")
-            return np.array([])
+        if text_prompt:
+            # Text prompt was given: Combine ALL returned masks
+            print(f"[Server] Combining {len(masks_data)} masks from text prompt.")
+            for mask_data in masks_data:
+                resized_mask = cv2.resize(mask_data, (color_image.shape[1], color_image.shape[0]), interpolation=cv2.INTER_NEAREST)
+                binary_mask = (resized_mask > 0).astype(np.uint8)
+                final_mask_raw = cv2.bitwise_or(final_mask_raw, binary_mask)
         
-        segmentation_mask = largest_mask
+        else:
+            # NO PROMPT: Find HIGHEST CONFIDENCE mask
+            if results[0].probs is not None and len(results[0].probs) > 0:
+                print(f"[Server] Finding highest confidence mask among {len(masks_data)} candidates.")
+                confidences = results[0].probs.data.cpu().numpy()
+                best_mask_index = np.argmax(confidences)
+                best_mask_data = masks_data[best_mask_index]
+                print(f"[Server] Highest confidence: {confidences[best_mask_index]:.2f}")
+                resized_mask = cv2.resize(best_mask_data, (color_image.shape[1], color_image.shape[0]), interpolation=cv2.INTER_NEAREST)
+                final_mask_raw = (resized_mask > 0).astype(np.uint8)
+            else:
+                # Fallback to LARGEST AREA
+                print(f"[Server] Confidence scores not available. Falling back to LARGEST AREA.")
+                max_area = 0
+                for mask_data in masks_data:
+                    resized_mask = cv2.resize(mask_data, (color_image.shape[1], color_image.shape[0]), interpolation=cv2.INTER_NEAREST)
+                    binary_mask = (resized_mask > 0).astype(np.uint8)
+                    area = np.sum(binary_mask)
+                    if area > max_area:
+                        max_area = area
+                        final_mask_raw = binary_mask
+
+        if np.sum(final_mask_raw) == 0:
+            print("[Server] No valid masks found after processing.")
+            return empty_return
+        
+        segmentation_mask_bool = final_mask_raw # This is 0/1
+        segmentation_mask_img = (final_mask_raw * 255).astype(np.uint8) # This is 0/255
+        empty_return = {'grasps': np.array([]), 'segmentation': results[0].plot()}
 
         # --- 3. Create point clouds ---
         try:
             scene_pc, object_pc, _, _ = depth_and_segmentation_to_point_clouds(
                 depth_image=depth_image,
-                segmentation_mask=segmentation_mask,
+                segmentation_mask=segmentation_mask_bool, # Use the 0/1 mask
                 fx=fx, fy=fy, cx=cx, cy=cy,
                 target_object_id=1,
                 remove_object_from_scene=True
             )
         except ValueError as e:
             print(f"[Server] Error creating point clouds: {e}")
-            return np.array([])
+            return empty_return
             
         if object_pc.shape[0] == 0:
             print("[Server] No object points found.")
-            return np.array([])
+            return empty_return
 
         # --- 4. Filter object point cloud (MEMORY FIX) ---
         if object_pc.shape[0] > self.max_object_points:
@@ -131,7 +171,7 @@ class GraspPipelineServer:
         
         if pc_filtered.shape[0] < 50:
             print("[Server] Not enough points after filtering.")
-            return np.array([])
+            return empty_return
 
         # --- 5. Run GraspGen Inference (Hardcoded for finger gripper) ---
         grasps_inferred, grasp_conf_inferred = GraspGenSampler.run_inference(
@@ -140,16 +180,15 @@ class GraspPipelineServer:
 
         if len(grasps_inferred) == 0:
             print("[Server] No grasps found from inference.")
-            return np.array([])
+            return empty_return
             
         grasps_inferred = grasps_inferred.cpu().numpy()
 
-        # --- 6. Collision Filtering (ATTRIBUTE_ERROR FIX) ---
+        # --- 6. Collision Filtering ---
         T_subtract_pc_mean = tft.translation_matrix(-pc_filtered.mean(axis=0))
         grasps_centered = np.array([T_subtract_pc_mean @ g for g in grasps_inferred])
         
         if scene_pc.shape[0] > 0:
-            # Use our helper function, not tft.transform_points
             scene_pc_centered = transform_points(scene_pc, T_subtract_pc_mean) 
             if len(scene_pc_centered) > self.max_scene_points:
                 indices = np.random.choice(len(scene_pc_centered), self.max_scene_points, replace=False)
@@ -167,16 +206,19 @@ class GraspPipelineServer:
         )
         
         final_grasps_centered = grasps_centered[collision_free_mask]
-        
+        # final_grasps_centered = grasps_centered  # DISABLE COLLISION CHECK FOR TESTING
+
         if len(final_grasps_centered) == 0:
             print("[Server] All grasps filtered by collision.")
-            return np.array([])
+            return empty_return
             
         T_inv_subtract = tft.inverse_matrix(T_subtract_pc_mean)
         final_grasps = np.array([T_inv_subtract @ g for g in final_grasps_centered]) # Back to camera frame
         
         print(f"[Server] Found {len(final_grasps)} collision-free grasps.")
-        return final_grasps
+        
+        # --- MODIFIED: Return dictionary ---
+        return {'grasps': final_grasps, 'segmentation': results[0].plot()}
 
 # --- Main execution (Simplified) ---
 if __name__ == "__main__":
@@ -189,7 +231,7 @@ if __name__ == "__main__":
     context = zmq.Context()
     socket = context.socket(zmq.REP) # REP = Reply
     socket.bind("tcp://*:5555")
-    print("Grasp server (Test Mode) started on tcp://*:5555")
+    print("Grasp server started on tcp://*:5555")
 
     while True:
         try:
@@ -198,16 +240,18 @@ if __name__ == "__main__":
             
             print(f"Processing request for {request['arm_id']}...")
             
-            final_grasps = pipeline.run_prediction(
+            response_dict = pipeline.run_prediction(
                 color_image=request['color'],
                 depth_image=request['depth'],
                 K=request['K'],
-                params=request['params']
+                params=request['params'],
+                text_prompt=request.get('text_prompt', None) # Get prompt
             )
             
-            socket.send_pyobj(final_grasps)
+            socket.send_pyobj(response_dict)
             
         except Exception as e:
             print(f"An error occurred: {e}")
             traceback.print_exc()
-            socket.send_pyobj(np.array([]))
+            # --- MODIFIED: Send error dict ---
+            socket.send_pyobj({'grasps': np.array([]), 'mask': None})

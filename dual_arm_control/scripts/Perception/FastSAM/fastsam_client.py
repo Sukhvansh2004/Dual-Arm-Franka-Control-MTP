@@ -54,7 +54,7 @@ class FastSAMClientNode:
             cv2.imshow("Live Feed (Client)", cv_image)
             cv2.waitKey(1) # This is crucial for updating the window
             
-        request = {'image': cv_image, 'text_prompt': 'red box'}
+        request = {'image': cv_image, 'text_prompt': 'Wooden Hammer with metal head'}
         
         with self.zmq_lock:
             try:

@@ -23,10 +23,6 @@
     <xacro:arg name="use_suction_0" default="false" />
     <xacro:arg name="use_suction_1" default="false" />
 
-    <xacro:arg name="object_x" default="0.0" />
-    <xacro:arg name="object_y" default="0.4" />
-    <xacro:arg name="object_z" default="0.04" />
-
     <xacro:property name="panda_shared_definitions_loaded" value="false" />
 
     <xacro:include filename="$(find franka_mujoco)/assets/xacro/panda.mujoco.xacro" />
@@ -34,7 +30,7 @@
 
     <xacro:include filename="$(find dual_arm_control)/worlds/object.xacro" />
 
-    <xacro:include filename="$(find dual_arm_control)/YCB_Dataset/ycb/adjustable_wrench.xml" />
+    <xacro:include filename="$(find dual_arm_control)/YCB_Dataset/ycb/hammer.xml" />
 
     <visual>
         <headlight ambient="0.4 0.4 0.4" diffuse="0.4 0.4 0.4" specular="0.0 0.0 0.0" active="1" />

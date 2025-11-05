@@ -4,6 +4,7 @@ import rospy
 import numpy as np
 import tf.transformations as tft
 import zmq
+import cv2 # <-- Added for visualization
 
 # --- ROS Imports ---
 from sensor_msgs.msg import Image, CameraInfo
@@ -14,12 +15,11 @@ print("ROS, CV Bridge, and ZMQ imported successfully.")
 
 class GraspPredictionNode:
     """
-    Simplified client for testing.
     Subscribes to L_panda topics and calls the server.
     """
     def __init__(self):
-        rospy.init_node('grasp_prediction_node_client_test')
-        rospy.loginfo("Starting Grasp Prediction Node (ZMQ Test Client).")
+        rospy.init_node('grasp_prediction_node_client')
+        rospy.loginfo("Starting Grasp Prediction Node (ZMQ Client).")
 
         # --- ZMQ Setup ---
         rospy.loginfo("Connecting to GraspGen server...")
@@ -36,6 +36,9 @@ class GraspPredictionNode:
             'grasp_threshold': rospy.get_param('~grasp_threshold', 0.8)
         }
         
+        # --- NEW: Get text prompt from param ---
+        self.text_prompt = "Wooden Handle"
+        
         prediction_hz = rospy.get_param('~prediction_hz', 0.5)
         self.prediction_interval = rospy.Duration(1.0 / prediction_hz)
 
@@ -51,9 +54,13 @@ class GraspPredictionNode:
         self.latest_color = None
         self.last_prediction_time = rospy.Time(0)
         self.cam_info_sub = None # To store subscriber
+        self.visualize = True
 
         # --- Publishers ---
         self.grasp_pub = rospy.Publisher(f"~{self.arm_id}/predicted_grasps", PoseArray, queue_size=1)
+        
+        if self.visualize:
+            self.segmentation_pub = rospy.Publisher(f"~{self.arm_id}/segmentation", Image, queue_size=1)
         
         # --- Subscribers ---
         rospy.loginfo("Setting up subscribers...")
@@ -116,7 +123,8 @@ class GraspPredictionNode:
             'color': color_image,
             'depth': depth_image,
             'K': cam_info.K,
-            'params': self.params
+            'params': self.params,
+            'text_prompt': self.text_prompt # <-- ADDED PROMPT
         }
 
         # --- 3. Send Request and Wait for Reply ---
@@ -124,32 +132,65 @@ class GraspPredictionNode:
             rospy.loginfo(f"[{self.arm_id}] Sending request to server...")
             self.socket.send_pyobj(request_data)
             
-            final_grasps = self.socket.recv_pyobj()
+            # --- MODIFIED: Receive dictionary ---
+            response = self.socket.recv_pyobj()
+            
+            # Check for server error
+            if response['segmentation'] is None:
+                rospy.logerr(f"[{self.arm_id}] Server returned an error (segmentation is None).")
+                return
+            
+            final_grasps = response['grasps']
+            
             rospy.loginfo(f"[{self.arm_id}] Received {len(final_grasps)} grasps from server.")
             
         except Exception as e:
             rospy.logerr(f"[{self.arm_id}] ZMQ request failed: {e}")
             return
-
-        if len(final_grasps) == 0:
-            rospy.logwarn(f"[{self.arm_id}] No grasps returned from server.")
-            return
-
-        # --- 4. Publish results ---
-        pose_array_msg = PoseArray()
-        pose_array_msg.header = depth_msg.header # Publish in the camera frame
-        
-        for grasp_matrix in final_grasps:
-            p = Pose()
-            trans = tft.translation_from_matrix(grasp_matrix)
-            quat = tft.quaternion_from_matrix(grasp_matrix)
-            p.position.x, p.position.y, p.position.z = trans
-            p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
-            pose_array_msg.poses.append(p)
             
-        self.grasp_pub.publish(pose_array_msg)
-        rospy.loginfo(f"[{self.arm_id}] Published {len(pose_array_msg.poses)} grasp poses.")
+        # --- 4. Handle No Grasps ---
+        if len(final_grasps) != 0:
+            # --- 5. Publish Grasps ---
+            pose_array_msg = PoseArray()
+            pose_array_msg.header = depth_msg.header # Publish in the camera frame
+            
+            for grasp_matrix in final_grasps:
+                p = Pose()
+                trans = tft.translation_from_matrix(grasp_matrix)
+                quat = tft.quaternion_from_matrix(grasp_matrix)
+                p.position.x, p.position.y, p.position.z = trans
+                p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
+                pose_array_msg.poses.append(p)
+                
+            self.grasp_pub.publish(pose_array_msg)
+            rospy.loginfo(f"[{self.arm_id}] Published {len(pose_array_msg.poses)} grasp poses.")
+        else:
+            rospy.logwarn(f"[{self.arm_id}] No grasps returned from server.")
 
+        if self.visualize:
+            # --- 6. 2D CV2 Visualization (Optional) ---
+            # viz_image = color_image.copy()
+            # K_matrix = np.array(cam_info.K).reshape(3, 3)
+            # dist_coeffs = np.zeros(4) 
+            # axis_points = np.float32([[0,0,0], [0.05,0,0], [0,0.05,0], [0,0,0.05]]).reshape(-1, 3)
+            # for grasp_matrix in final_grasps:
+            #     grasp_r_matrix = grasp_matrix[:3, :3]
+            #     grasp_t_vector = grasp_matrix[:3, 3]
+            #     grasp_r_vector, _ = cv2.Rodrigues(grasp_r_matrix)
+            #     img_points, _ = cv2.projectPoints(axis_points, grasp_r_vector, grasp_t_vector, K_matrix, dist_coeffs)
+                
+            #     img_points = img_points.reshape(-1, 2).astype(int)
+            #     p_origin = tuple(img_points[0])
+            #     p_x = tuple(img_points[1])
+            #     p_y = tuple(img_points[2])
+            #     p_z = tuple(img_points[3])
+
+            #     cv2.line(viz_image, p_origin, p_x, (0, 0, 255), 2) # X = Red
+            #     cv2.line(viz_image, p_origin, p_y, (0, 255, 0), 2) # Y = Green
+            #     cv2.line(viz_image, p_origin, p_z, (255, 0, 0), 2) # Z = Blue
+            
+            # Add the mask as an overlay
+            self.segmentation_pub.publish(self.bridge.cv2_to_imgmsg(response['segmentation']))
 
 if __name__ == '__main__':
     try:
@@ -157,3 +198,5 @@ if __name__ == '__main__':
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
+    finally:
+        cv2.destroyAllWindows()
