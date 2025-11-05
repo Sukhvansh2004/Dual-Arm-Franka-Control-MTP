@@ -2,7 +2,7 @@
 <mujoco xmlns:xacro="http://ros.org/wiki/xacro" model="Dual Panda Scene with Object">
     <option timestep="0.001" gravity="0 0 -9.81" cone="elliptic" />
     <size njmax="500" nconmax="100" />
-    <compiler angle="radian" />
+    <compiler angle="radian" meshdir="$(find dual_arm_control)/YCB_Dataset/ycb/" texturedir="$(find dual_arm_control)/YCB_Dataset/ycb/" />
 
     <xacro:arg name="arm_id_0" default="L_panda" />
     <xacro:arg name="x0" default="-0.5" />
@@ -31,7 +31,10 @@
 
     <xacro:include filename="$(find franka_mujoco)/assets/xacro/panda.mujoco.xacro" />
     <xacro:include filename="$(find franka_mujoco)/assets/xacro/panda_suction.mujoco.xacro" />
+
     <xacro:include filename="$(find dual_arm_control)/worlds/object.xacro" />
+
+    <xacro:include filename="$(find dual_arm_control)/YCB_Dataset/ycb/adjustable_wrench.xml" />
 
     <visual>
         <headlight ambient="0.4 0.4 0.4" diffuse="0.4 0.4 0.4" specular="0.0 0.0 0.0" active="1" />
@@ -62,7 +65,7 @@
             <xacro:panda_robot name="$(arg arm_id_1)" pos="$(arg x1) $(arg y1) $(arg z1)" rot="$(arg roll1) $(arg pitch1) $(arg yaw1)" />
         </xacro:unless>
 
-        <xacro:graspable_box name="object_to_grasp" x="$(arg object_x)" y="$(arg object_y)" z="$(arg object_z)" />
+        <!-- <xacro:graspable_box name="object_to_grasp" x="$(arg object_x)" y="$(arg object_y)" z="$(arg object_z)" /> -->
     </worldbody>
 
     <xacro:if value="$(arg use_suction_0)">
