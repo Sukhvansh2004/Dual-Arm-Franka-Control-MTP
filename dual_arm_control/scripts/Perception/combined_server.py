@@ -161,7 +161,7 @@ class GraspPipelineServer:
             print("[Server] No object points found.")
             return empty_return
 
-        # --- 4. Filter object point cloud (MEMORY FIX) ---
+        # --- 4. Filter object point cloud ---
         if object_pc.shape[0] > self.max_object_points:
             print(f"[Server] Object PC too large ({object_pc.shape[0]} points). Downsampling to {self.max_object_points}...")
             indices = np.random.choice(object_pc.shape[0], self.max_object_points, replace=False)

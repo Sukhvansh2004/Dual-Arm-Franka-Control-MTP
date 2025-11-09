@@ -21,7 +21,7 @@ class GraspPredictionNode:
     and transforms the resulting grasps into the '{arm_id}_link0' frame.
     """
     def __init__(self):
-        rospy.init_node('grasp_prediction_node_client')
+        rospy.init_node('grasp_prediction_node_client', anonymous=True)
         rospy.loginfo("Starting Grasp Prediction Node (ZMQ Client).")
 
         # --- ZMQ Setup ---
@@ -48,11 +48,11 @@ class GraspPredictionNode:
         rospy.loginfo(f"Initialized with params {self.params}")
 
         # --- Hardcoded text prompt for testing ---
-        self.text_prompt = "Wooden Handle"
+        self.text_prompt = "Wooden Block"
         if self.text_prompt:
              rospy.loginfo(f"Using text prompt: '{self.text_prompt}'")
         
-        prediction_hz = rospy.get_param('~prediction_hz', 0.5)
+        prediction_hz = rospy.get_param('~prediction_hz', 1)
         self.prediction_interval = rospy.Duration(1.0 / prediction_hz)
 
         try:
@@ -93,8 +93,8 @@ class GraspPredictionNode:
         color_topic = f"{base_topic}/rgb/image_raw"
         info_topic = f"{base_topic}/depth/camera_info"
         
-        rospy.Subscriber(depth_topic, Image, self.depth_callback)
-        rospy.Subscriber(color_topic, Image, self.color_callback)
+        rospy.Subscriber(depth_topic, Image, self.depth_callback, queue_size=1)
+        rospy.Subscriber(color_topic, Image, self.color_callback, queue_size=1)
         self.cam_info_sub = rospy.Subscriber(info_topic, CameraInfo, self.cam_info_callback)
             
         rospy.loginfo("Subscribers and publishers are set up. Waiting for data...")
