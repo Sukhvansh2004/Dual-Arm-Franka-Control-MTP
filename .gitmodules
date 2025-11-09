@@ -7,3 +7,6 @@
 [submodule "mujoco_ros_pkgs"]
 	path = mujoco_ros_pkgs
 	url = https://github.com/Sukhvansh2004/mujoco_ros_pkgs.git
+[submodule "GraspGen"]
+	path = GraspGen
+	url = https://github.com/Sukhvansh2004/GraspGen.git
