@@ -3,19 +3,21 @@
 import rospy
 import numpy as np
 import tf.transformations as tft
+import tf
 import zmq
-import cv2 # <-- Added for visualization
+import cv2
 
 # --- ROS Imports ---
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseArray, Pose
 from cv_bridge import CvBridge, CvBridgeError
-print("ROS, CV Bridge, and ZMQ imported successfully.")
+print("ROS, CV Bridge, TF, and ZMQ imported successfully.")
 
 
 class GraspPredictionNode:
     """
-    Subscribes to L_panda topics and calls the server.
+    Subscribes to L_panda topics, calls the server,
+    and transforms the resulting grasps into the 'L_panda_hand' frame.
     """
     def __init__(self):
         rospy.init_node('grasp_prediction_node_client')
@@ -27,6 +29,9 @@ class GraspPredictionNode:
         self.socket = context.socket(zmq.REQ) # REQ = Request
         self.socket.connect("tcp://localhost:5555")
         rospy.loginfo("Connected to tcp://localhost:5555")
+        
+        # --- ADDED: TF Listener ---
+        self.tf_listener = tf.TransformListener()
 
         # --- Get ROS Params ---
         self.params = {
@@ -36,15 +41,21 @@ class GraspPredictionNode:
             'grasp_threshold': rospy.get_param('~grasp_threshold', 0.8)
         }
         
-        # --- NEW: Get text prompt from param ---
-        self.text_prompt = "Wooden Handle"
+        # --- Hardcoded text prompt for testing ---
+        self.text_prompt = "Wooden Handle of the hammer"
+        if self.text_prompt:
+             rospy.loginfo(f"Using text prompt: '{self.text_prompt}'")
         
         prediction_hz = rospy.get_param('~prediction_hz', 0.5)
         self.prediction_interval = rospy.Duration(1.0 / prediction_hz)
 
         # --- HARDCODED for L_panda ---
         self.arm_id = "L_panda"
-        rospy.loginfo(f"Hardcoded for arm: {self.arm_id}")
+        # --- NEW: Define target TF frame ---
+        self.target_frame = f"{self.arm_id}_link0"
+        # We will get the camera frame from the cam_info message
+        self.camera_frame = f"{self.arm_id}_camera_depth_frame" # Default
+        rospy.loginfo(f"Hardcoded for arm: {self.arm_id}. Target frame: {self.target_frame}")
 
         self.bridge = CvBridge()
 
@@ -74,6 +85,15 @@ class GraspPredictionNode:
         self.cam_info_sub = rospy.Subscriber(info_topic, CameraInfo, self.cam_info_callback)
             
         rospy.loginfo("Subscribers and publishers are set up. Waiting for data...")
+        
+        # --- Wait for TF ---
+        try:
+            rospy.loginfo(f"Waiting for transform between {self.target_frame} and {self.camera_frame}...")
+            # Wait for the transform to be available once at the start
+            self.tf_listener.waitForTransform(self.target_frame, self.camera_frame, rospy.Time(), rospy.Duration(10.0))
+            rospy.loginfo("Transform is available!")
+        except tf.Exception as e:
+            rospy.logerr(f"Could not get transform in 10s. Is the robot_state_publisher running? Error: {e}")
 
     def color_callback(self, msg):
         self.latest_color = msg
@@ -96,8 +116,9 @@ class GraspPredictionNode:
         if self.cam_info is None:
             rospy.loginfo(f"Received camera info for {self.arm_id} arm.")
             self.cam_info = msg
-            # Unsubscribe to not waste resources
+            self.camera_frame = msg.header.frame_id # Get precise frame_id
             self.cam_info_sub.unregister()
+            rospy.loginfo(f"Camera frame set to: {self.camera_frame}")
 
     def predict_grasps(self):
         rospy.loginfo(f"[{self.arm_id}] Preparing data for prediction server...")
@@ -140,56 +161,57 @@ class GraspPredictionNode:
                 rospy.logerr(f"[{self.arm_id}] Server returned an error (segmentation is None).")
                 return
             
-            final_grasps = response['grasps']
+            # Grasps are in the CAMERA frame
+            grasps_in_camera_frame = response['grasps']
             
-            rospy.loginfo(f"[{self.arm_id}] Received {len(final_grasps)} grasps from server.")
+            rospy.loginfo(f"[{self.arm_id}] Received {len(grasps_in_camera_frame)} grasps from server.")
             
         except Exception as e:
             rospy.logerr(f"[{self.arm_id}] ZMQ request failed: {e}")
             return
             
-        # --- 4. Handle No Grasps ---
-        if len(final_grasps) != 0:
-            # --- 5. Publish Grasps ---
+        # --- 4. Get TF Transform ---
+        try:
+            # Get the transform from the camera frame to the hand frame
+            (trans, rot) = self.tf_listener.lookupTransform(self.target_frame, self.camera_frame, rospy.Time(0))
+            T_camera_to_hand = tft.concatenate_matrices(
+                tft.translation_matrix(trans),
+                tft.quaternion_matrix(rot)
+            )
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+            rospy.logerr(f"[{self.arm_id}] TF error looking up transform from {self.camera_frame} to {self.target_frame}: {e}")
+            return
+
+        if len(grasps_in_camera_frame) == 0:
+            rospy.logwarn(f"[{self.arm_id}] No grasps returned from server.")
+            # Publish an empty array so RViz clears old poses
+            empty_pose_array = PoseArray()
+            empty_pose_array.header.stamp = rospy.Time.now()
+            empty_pose_array.header.frame_id = self.target_frame
+            self.grasp_pub.publish(empty_pose_array)
+        else:
+            # --- 7. Transform and Publish Grasps ---
             pose_array_msg = PoseArray()
-            pose_array_msg.header = depth_msg.header # Publish in the camera frame
+            pose_array_msg.header.stamp = rospy.Time.now()
+            pose_array_msg.header.frame_id = self.target_frame
             
-            for grasp_matrix in final_grasps:
+            for P_camera in grasps_in_camera_frame:
+                # --- APPLY TRANSFORM ---
+                # P_hand = T_camera_to_hand @ P_camera
+                P_hand = T_camera_to_hand @ P_camera
+                
                 p = Pose()
-                trans = tft.translation_from_matrix(grasp_matrix)
-                quat = tft.quaternion_from_matrix(grasp_matrix)
+                trans = tft.translation_from_matrix(P_hand)
+                quat = tft.quaternion_from_matrix(P_hand)
                 p.position.x, p.position.y, p.position.z = trans
                 p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
                 pose_array_msg.poses.append(p)
                 
             self.grasp_pub.publish(pose_array_msg)
-            rospy.loginfo(f"[{self.arm_id}] Published {len(pose_array_msg.poses)} grasp poses.")
-        else:
-            rospy.logwarn(f"[{self.arm_id}] No grasps returned from server.")
-
+            rospy.loginfo(f"[{self.arm_id}] Published {len(pose_array_msg.poses)} grasp poses IN {self.target_frame} FRAME.")
+        
+        # --- 8. 2D CV2 Visualization ---
         if self.visualize:
-            # --- 6. 2D CV2 Visualization (Optional) ---
-            # viz_image = color_image.copy()
-            # K_matrix = np.array(cam_info.K).reshape(3, 3)
-            # dist_coeffs = np.zeros(4) 
-            # axis_points = np.float32([[0,0,0], [0.05,0,0], [0,0.05,0], [0,0,0.05]]).reshape(-1, 3)
-            # for grasp_matrix in final_grasps:
-            #     grasp_r_matrix = grasp_matrix[:3, :3]
-            #     grasp_t_vector = grasp_matrix[:3, 3]
-            #     grasp_r_vector, _ = cv2.Rodrigues(grasp_r_matrix)
-            #     img_points, _ = cv2.projectPoints(axis_points, grasp_r_vector, grasp_t_vector, K_matrix, dist_coeffs)
-                
-            #     img_points = img_points.reshape(-1, 2).astype(int)
-            #     p_origin = tuple(img_points[0])
-            #     p_x = tuple(img_points[1])
-            #     p_y = tuple(img_points[2])
-            #     p_z = tuple(img_points[3])
-
-            #     cv2.line(viz_image, p_origin, p_x, (0, 0, 255), 2) # X = Red
-            #     cv2.line(viz_image, p_origin, p_y, (0, 255, 0), 2) # Y = Green
-            #     cv2.line(viz_image, p_origin, p_z, (255, 0, 0), 2) # Z = Blue
-            
-            # Add the mask as an overlay
             self.segmentation_pub.publish(self.bridge.cv2_to_imgmsg(response['segmentation']))
 
 if __name__ == '__main__':
