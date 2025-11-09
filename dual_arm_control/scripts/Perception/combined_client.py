@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import rospy
 import numpy as np
@@ -6,6 +6,7 @@ import tf.transformations as tft
 import tf
 import zmq
 import cv2
+import sys
 
 # --- ROS Imports ---
 from sensor_msgs.msg import Image, CameraInfo
@@ -16,8 +17,8 @@ print("ROS, CV Bridge, TF, and ZMQ imported successfully.")
 
 class GraspPredictionNode:
     """
-    Subscribes to L_panda topics, calls the server,
-    and transforms the resulting grasps into the 'L_panda_hand' frame.
+    Subscribes to {arm_id} topics, calls the server,
+    and transforms the resulting grasps into the '{arm_id}_link0' frame.
     """
     def __init__(self):
         rospy.init_node('grasp_prediction_node_client')
@@ -49,13 +50,20 @@ class GraspPredictionNode:
         prediction_hz = rospy.get_param('~prediction_hz', 0.5)
         self.prediction_interval = rospy.Duration(1.0 / prediction_hz)
 
-        # --- HARDCODED for L_panda ---
-        self.arm_id = "L_panda"
-        # --- NEW: Define target TF frame ---
+        try:
+            self.arm_id = rospy.get_param('~arm_id')
+        except KeyError:
+            rospy.logerr("Fatal: Required parameter '~arm_id' not set.")
+            rospy.logerr("Please specify the arm_id, e.g.: _arm_id:=L_panda")
+            # We exit here because the node is useless without an arm_id
+            sys.exit(1)
+
+        # --- Dynamic: Define target TF frame ---
         self.target_frame = f"{self.arm_id}_link0"
         # We will get the camera frame from the cam_info message
         self.camera_frame = f"{self.arm_id}_camera_depth_frame" # Default
-        rospy.loginfo(f"Hardcoded for arm: {self.arm_id}. Target frame: {self.target_frame}")
+        
+        rospy.loginfo(f"Configured for arm: {self.arm_id}. Target frame: {self.target_frame}")
 
         self.bridge = CvBridge()
 

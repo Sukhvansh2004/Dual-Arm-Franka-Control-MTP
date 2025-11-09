@@ -7,6 +7,7 @@ import cv2
 import zmq # Import ZMQ
 import sys
 import traceback
+import argparse
 
 # --- All your GraspGen/FastSAM imports ---
 GRASPGEN_PATH = '/home/sukhvansh/franka_ws/src/GraspGen'
@@ -43,15 +44,15 @@ def transform_points(points, matrix):
 class GraspPipelineServer:
     """
     Simplified server that runs FastSAM and GraspGen for a
-    single, hardcoded finger gripper.
+    single, dynamically loaded gripper.
     """
-    def __init__(self, finger_cfg_path):
+    def __init__(self, cfg_path):
         print("Loading FastSAM model...")
         self.sam_model = FastSAM('FastSAM-x.pt') # Using 'x' model as in your example
         print("FastSAM model loaded.")
 
-        print(f"Loading HARDCODED GraspGen finger model from: {finger_cfg_path}")
-        self.gripper_cfg = load_grasp_cfg(finger_cfg_path)
+        print(f"Loading GraspGen model from: {cfg_path}")
+        self.gripper_cfg = load_grasp_cfg(cfg_path)
         self.gripper_sampler = GraspGenSampler(self.gripper_cfg)
         self.gripper_mesh = get_gripper_info(self.gripper_cfg.data.gripper_name).collision_mesh
         print("GraspGen models loaded.")
@@ -173,7 +174,7 @@ class GraspPipelineServer:
             print("[Server] Not enough points after filtering.")
             return empty_return
 
-        # --- 5. Run GraspGen Inference (Hardcoded for finger gripper) ---
+        # --- 5. Run GraspGen Inference (Now generic) ---
         grasps_inferred, grasp_conf_inferred = GraspGenSampler.run_inference(
             pc_filtered, self.gripper_sampler, grasp_thresh, num_grasps, topk_num_grasps=-1
         )
@@ -201,7 +202,7 @@ class GraspPipelineServer:
         collision_free_mask = filter_colliding_grasps(
             scene_pc=scene_pc_downsampled,
             grasp_poses=grasps_centered,
-            gripper_collision_mesh=self.gripper_mesh, # Hardcoded mesh
+            gripper_collision_mesh=self.gripper_mesh, # Uses the loaded mesh
             collision_threshold=collision_thresh,
         )
         
@@ -220,18 +221,44 @@ class GraspPipelineServer:
         # --- MODIFIED: Return dictionary ---
         return {'grasps': final_grasps, 'segmentation': results[0].plot()}
 
-# --- Main execution (Simplified) ---
 if __name__ == "__main__":
-    # --- HARDCODED CONFIG ---
-    FINGER_CONFIG = "/home/sukhvansh/franka_ws/src/GraspGenModels/checkpoints/graspgen_franka_panda.yml"
     
-    pipeline = GraspPipelineServer(FINGER_CONFIG)
+    # --- CONFIG PATHS ---
+    FINGER_CONFIG = "/home/sukhvansh/franka_ws/src/GraspGenModels/checkpoints/graspgen_franka_panda.yml"
+    SUCTION_CONFIG = "/home/sukhvansh/franka_ws/src/GraspGenModels/checkpoints/graspgen_single_suction_cup_30mm.yml" # <-- ASSUMED PATH
+
+    parser = argparse.ArgumentParser(description="Run GraspGen ZMQ Server for a specific gripper type.")
+    parser.add_argument(
+        'gripper_type', 
+        type=str, 
+        choices=['finger', 'suction'],
+        help="The type of gripper model to load ('finger' or 'suction')."
+    )
+    parser.add_argument(
+        '--port', 
+        type=int, 
+        default=5555,
+        help="The TCP port to bind the ZMQ server to (default: 5555)."
+    )
+    args = parser.parse_args()
+    
+    # --- CHANGED: Select config path based on arg ---
+    if args.gripper_type == 'finger':
+        config_path = FINGER_CONFIG
+        print(f"Initializing server with FINGER gripper: {config_path}")
+    elif args.gripper_type == 'suction':
+        config_path = SUCTION_CONFIG
+        print(f"Initializing server with SUCTION gripper: {config_path}")
+    
+    pipeline = GraspPipelineServer(config_path)
     
     # Setup ZMQ
     context = zmq.Context()
     socket = context.socket(zmq.REP) # REP = Reply
-    socket.bind("tcp://*:5555")
-    print("Grasp server started on tcp://*:5555")
+    
+    socket_address = f"tcp://*:{args.port}"
+    socket.bind(socket_address)
+    print(f"Grasp server started on {socket_address}")
 
     while True:
         try:
