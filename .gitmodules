@@ -10,3 +10,6 @@
 [submodule "GraspGen"]
 	path = GraspGen
 	url = https://github.com/Sukhvansh2004/GraspGen.git
+[submodule "dual_arm_control/YCB_Dataset"]
+	path = dual_arm_control/YCB_Dataset
+	url = https://github.com/Sukhvansh2004/YCB_Dataset.git
