@@ -25,11 +25,14 @@ class GraspPredictionNode:
         rospy.loginfo("Starting Grasp Prediction Node (ZMQ Client).")
 
         # --- ZMQ Setup ---
-        rospy.loginfo("Connecting to GraspGen server...")
+        self.port = rospy.get_param('~port', 5555)
+
+        rospy.loginfo(f"Connecting to GraspGen server on port {self.port}...")
         context = zmq.Context()
         self.socket = context.socket(zmq.REQ) # REQ = Request
-        self.socket.connect("tcp://localhost:5555")
-        rospy.loginfo("Connected to tcp://localhost:5555")
+        socket_address = f"tcp://localhost:{self.port}"
+        self.socket.connect(socket_address)
+        rospy.loginfo(f"Connected to {socket_address}")
         
         # --- ADDED: TF Listener ---
         self.tf_listener = tf.TransformListener()
@@ -39,11 +42,13 @@ class GraspPredictionNode:
             'collision_threshold': rospy.get_param('~collision_threshold', 0.02),
             'max_scene_points': rospy.get_param('~max_scene_points', 8192),
             'num_grasps': rospy.get_param('~num_grasps', 200),
-            'grasp_threshold': rospy.get_param('~grasp_threshold', 0.8)
+            'grasp_threshold': rospy.get_param('~grasp_threshold', 0.8),
+            'collision_check': rospy.get_param('~collision_check', True)
         }
-        
+        rospy.loginfo(f"Initialized with params {self.params}")
+
         # --- Hardcoded text prompt for testing ---
-        self.text_prompt = "Wooden Handle of the hammer"
+        self.text_prompt = "Wooden Handle"
         if self.text_prompt:
              rospy.loginfo(f"Using text prompt: '{self.text_prompt}'")
         
@@ -153,7 +158,7 @@ class GraspPredictionNode:
             'depth': depth_image,
             'K': cam_info.K,
             'params': self.params,
-            'text_prompt': self.text_prompt # <-- ADDED PROMPT
+            'text_prompt': self.text_prompt
         }
 
         # --- 3. Send Request and Wait for Reply ---

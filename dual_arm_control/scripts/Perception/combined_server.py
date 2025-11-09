@@ -74,6 +74,8 @@ class GraspPipelineServer:
         grasp_thresh = params.get('grasp_threshold', self.grasp_threshold)
         num_grasps = params.get('num_grasps', self.num_grasps)
         collision_thresh = params.get('collision_threshold', self.collision_threshold)
+        max_scene_pts = params.get('max_scene_points', self.max_scene_points)
+        collision_check = params.get('collision_check', True)
 
         # Create an empty mask template for failure cases
         empty_mask = np.zeros((color_image.shape[0], color_image.shape[1]), dtype=np.uint8)
@@ -140,7 +142,6 @@ class GraspPipelineServer:
             return empty_return
         
         segmentation_mask_bool = final_mask_raw # This is 0/1
-        segmentation_mask_img = (final_mask_raw * 255).astype(np.uint8) # This is 0/255
         empty_return = {'grasps': np.array([]), 'segmentation': results[0].plot()}
 
         # --- 3. Create point clouds ---
@@ -191,23 +192,24 @@ class GraspPipelineServer:
         
         if scene_pc.shape[0] > 0:
             scene_pc_centered = transform_points(scene_pc, T_subtract_pc_mean) 
-            if len(scene_pc_centered) > self.max_scene_points:
-                indices = np.random.choice(len(scene_pc_centered), self.max_scene_points, replace=False)
+            if len(scene_pc_centered) > max_scene_pts:
+                indices = np.random.choice(len(scene_pc_centered), max_scene_pts, replace=False)
                 scene_pc_downsampled = scene_pc_centered[indices]
             else:
                 scene_pc_downsampled = scene_pc_centered
         else:
             scene_pc_downsampled = np.array([]).reshape(0, 3) 
 
-        collision_free_mask = filter_colliding_grasps(
-            scene_pc=scene_pc_downsampled,
-            grasp_poses=grasps_centered,
-            gripper_collision_mesh=self.gripper_mesh, # Uses the loaded mesh
-            collision_threshold=collision_thresh,
-        )
-        
-        final_grasps_centered = grasps_centered[collision_free_mask]
-        # final_grasps_centered = grasps_centered  # DISABLE COLLISION CHECK FOR TESTING
+        if collision_check:
+            collision_free_mask = filter_colliding_grasps(
+                scene_pc=scene_pc_downsampled,
+                grasp_poses=grasps_centered,
+                gripper_collision_mesh=self.gripper_mesh, # Uses the loaded mesh
+                collision_threshold=collision_thresh,
+            )
+            final_grasps_centered = grasps_centered[collision_free_mask]
+        else:
+            final_grasps_centered = grasps_centered
 
         if len(final_grasps_centered) == 0:
             print("[Server] All grasps filtered by collision.")
@@ -216,9 +218,8 @@ class GraspPipelineServer:
         T_inv_subtract = tft.inverse_matrix(T_subtract_pc_mean)
         final_grasps = np.array([T_inv_subtract @ g for g in final_grasps_centered]) # Back to camera frame
         
-        print(f"[Server] Found {len(final_grasps)} collision-free grasps.")
+        print(f"[Server] Found {len(final_grasps)} grasps.")
         
-        # --- MODIFIED: Return dictionary ---
         return {'grasps': final_grasps, 'segmentation': results[0].plot()}
 
 if __name__ == "__main__":
