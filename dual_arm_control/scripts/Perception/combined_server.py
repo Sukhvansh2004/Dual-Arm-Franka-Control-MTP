@@ -9,7 +9,7 @@ import sys
 import traceback
 
 # --- All your GraspGen/FastSAM imports ---
-GRASPGEN_PATH = '/home/sukhvansh/GraspGen'
+GRASPGEN_PATH = '/home/sukhvansh/franka_ws/src/GraspGen'
 if GRASPGEN_PATH not in sys.path:
     sys.path.append(GRASPGEN_PATH)
 
@@ -223,7 +223,7 @@ class GraspPipelineServer:
 # --- Main execution (Simplified) ---
 if __name__ == "__main__":
     # --- HARDCODED CONFIG ---
-    FINGER_CONFIG = "/home/sukhvansh/GraspGenModels/checkpoints/graspgen_franka_panda.yml"
+    FINGER_CONFIG = "/home/sukhvansh/franka_ws/src/GraspGenModels/checkpoints/graspgen_franka_panda.yml"
     
     pipeline = GraspPipelineServer(FINGER_CONFIG)
     
@@ -253,5 +253,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"An error occurred: {e}")
             traceback.print_exc()
-            # --- MODIFIED: Send error dict ---
             socket.send_pyobj({'grasps': np.array([]), 'mask': None})
