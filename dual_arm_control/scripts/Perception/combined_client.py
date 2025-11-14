@@ -43,7 +43,8 @@ class GraspPredictionNode:
             'max_scene_points': rospy.get_param('~max_scene_points', 8192),
             'num_grasps': rospy.get_param('~num_grasps', 200),
             'grasp_threshold': rospy.get_param('~grasp_threshold', 0.8),
-            'collision_check': rospy.get_param('~collision_check', True)
+            'collision_check': rospy.get_param('~collision_check', True),
+            'top_k': rospy.get_param('~top_k', 1)
         }
         rospy.loginfo(f"Initialized with params {self.params}")
 
@@ -208,17 +209,15 @@ class GraspPredictionNode:
             pose_array_msg.header.stamp = rospy.Time.now()
             pose_array_msg.header.frame_id = self.target_frame
             
-            for P_camera in grasps_in_camera_frame:
-                # --- APPLY TRANSFORM ---
-                # P_hand = T_camera_to_hand @ P_camera
-                P_hand = T_camera_to_hand @ P_camera
-                
-                p = Pose()
-                trans = tft.translation_from_matrix(P_hand)
-                quat = tft.quaternion_from_matrix(P_hand)
-                p.position.x, p.position.y, p.position.z = trans
-                p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
-                pose_array_msg.poses.append(p)
+            P_camera = grasps_in_camera_frame[0]
+            P_hand = T_camera_to_hand @ P_camera
+            
+            p = Pose()
+            trans = tft.translation_from_matrix(P_hand)
+            quat = tft.quaternion_from_matrix(P_hand)
+            p.position.x, p.position.y, p.position.z = trans
+            p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
+            pose_array_msg.poses.append(p)
                 
             self.grasp_pub.publish(pose_array_msg)
             rospy.loginfo(f"[{self.arm_id}] Published {len(pose_array_msg.poses)} grasp poses IN {self.target_frame} FRAME.")

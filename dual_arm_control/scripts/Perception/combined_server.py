@@ -76,6 +76,7 @@ class GraspPipelineServer:
         collision_thresh = params.get('collision_threshold', self.collision_threshold)
         max_scene_pts = params.get('max_scene_points', self.max_scene_points)
         collision_check = params.get('collision_check', True)
+        top_k = params.get('top_k', 1)
 
         # Create an empty mask template for failure cases
         empty_mask = np.zeros((color_image.shape[0], color_image.shape[1]), dtype=np.uint8)
@@ -177,7 +178,7 @@ class GraspPipelineServer:
 
         # --- 5. Run GraspGen Inference (Now generic) ---
         grasps_inferred, grasp_conf_inferred = GraspGenSampler.run_inference(
-            pc_filtered, self.gripper_sampler, grasp_thresh, num_grasps, topk_num_grasps=-1
+            pc_filtered, self.gripper_sampler, grasp_thresh, num_grasps, topk_num_grasps=top_k
         )
 
         if len(grasps_inferred) == 0:
