@@ -45,8 +45,11 @@ catkin_install_python(PROGRAMS
   scripts/teleop_keyboard.py
   scripts/Perception/FastSAM/fastsam_client.py
   scripts/Perception/FastSAM/fastsam_server.py
-  scripts/Perception/grasp_client.py
-  scripts/Perception/grasp_server.py
+  scripts/Perception/Grasp/grasp_client.py
+  scripts/Perception/Grasp/grasp_server.py
+  scripts/Perception/combined_client_srv.py
+  scripts/Perception/combined_client.py
+  scripts/Perception/combined_server.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

@@ -1,9 +1,6 @@
 # Request
-# (Empty)
-# This service is just a trigger. It will use the latest
-# data from its subscribed topics.
+string prompt
 ---
 # Response
-geometry_msgs/PoseArray grasps
 bool success
 string message

@@ -27,16 +27,4 @@
     <arg name="arm_id_0" value="$(arg arm_id_0)" />
     <arg name="arm_id_1" value="$(arg arm_id_1)" />
   </include>
-
-  <node name="handover_sequence_controller"
-        pkg="dual_arm_control"
-        type="handover_sequence.py"
-        output="screen"
-        launch-prefix="bash -c 'sleep 5; $0 $@' ">
-    <param name="object_pos_x" value="$(arg object_x)" />
-    <param name="object_pos_y" value="$(arg object_y)" />
-    <param name="use_suction_gripper_0" value="$(arg use_suction_gripper_0)" />
-    <param name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
-  </node>
-
 </launch>
