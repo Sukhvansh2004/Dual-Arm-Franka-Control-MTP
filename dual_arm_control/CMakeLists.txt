@@ -53,6 +53,11 @@ catkin_install_python(PROGRAMS
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
+install(PROGRAMS
+  scripts/start_grasp_servers.sh
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
 
 ## Install your launch, worlds, and srv files so ROS can find them.
 install(DIRECTORY launch/

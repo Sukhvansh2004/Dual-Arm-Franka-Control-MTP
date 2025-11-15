@@ -10,7 +10,7 @@ import sys
 
 # --- ROS Imports ---
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import PoseArray, Pose
+from geometry_msgs.msg import PoseArray, Pose, PoseStamped
 from cv_bridge import CvBridge, CvBridgeError
 from dual_arm_control.srv import GetGrasps, GetGraspsResponse
 
@@ -19,19 +19,27 @@ print("ROS, CV Bridge, TF, and ZMQ imported successfully.")
 
 class GraspPredictionService:
     """
-    Provides a ROS service to trigger grasp prediction.
+    Provides a ROS service to trigger grasp prediction for a specific arm.
     On service call, it gathers sensor data, calls the GraspGen ZMQ server,
-    and publishes the resulting grasps to the appropriate topics.
+    and publishes the resulting grasps to topics in the node's namespace.
     """
     def __init__(self):
-        rospy.init_node('grasp_prediction_service_node', anonymous=True)
-        rospy.loginfo("Starting Grasp Prediction Service Node.")
+        rospy.init_node('grasp_prediction_service_node')
+        
+        try:
+            self.arm_id = rospy.get_param('~arm_id')
+            self.port = rospy.get_param('~port')
+        except KeyError as e:
+            rospy.logerr(f"Fatal: Required parameter '{e.args[0]}' not set.")
+            rospy.logerr("Please specify 'arm_id' and 'port' in the launch file.")
+            sys.exit(1)
+
+        rospy.loginfo(f"Starting Grasp Prediction Service for arm '{self.arm_id}'.")
 
         # --- ZMQ Setup ---
-        self.port = rospy.get_param('~port', 5555)
         rospy.loginfo(f"Connecting to GraspGen server on port {self.port}...")
-        context = zmq.Context()
-        self.socket = context.socket(zmq.REQ)
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REQ)
         socket_address = f"tcp://localhost:{self.port}"
         self.socket.connect(socket_address)
         rospy.loginfo(f"Connected to {socket_address}")
@@ -46,37 +54,30 @@ class GraspPredictionService:
             'num_grasps': rospy.get_param('~num_grasps', 200),
             'grasp_threshold': rospy.get_param('~grasp_threshold', 0.8),
             'collision_check': rospy.get_param('~collision_check', True),
-            'top_k': rospy.get_param('~top_k', 1)
+            'top_k': rospy.get_param('~top_k', 50),
         }
         rospy.loginfo(f"Initialized with params {self.params}")
 
         self.visualize = True
 
-        # --- Publishers (created on demand and stored) ---
-        self.grasp_pubs = {}
-        self.segmentation_pubs = {}
+        # --- Publishers ---
+        self.grasp_pub = rospy.Publisher(f"cartesian_impedance_example_controller/equilibrium_pose", PoseStamped, queue_size=1, latch=True)
+        self.segmentation_pub = rospy.Publisher("segmentation", Image, queue_size=1, latch=True)
+        self.inferred_poses_pub = rospy.Publisher(f"inferred_grasp_poses", PoseArray, queue_size=1, latch=True)
 
         # --- Service ---
         self.service = rospy.Service('predict_grasps', GetGrasps, self.handle_predict_grasps)
-        rospy.loginfo("Service 'predict_grasps' is ready.")
-
-    def get_publisher(self, topic, msg_type, pubs_dict):
-        """Creates a publisher if it doesn't exist, otherwise returns the existing one."""
-        if topic not in pubs_dict:
-            rospy.loginfo(f"Creating publisher for topic: {topic}")
-            pubs_dict[topic] = rospy.Publisher(topic, msg_type, queue_size=1, latch=True)
-        return pubs_dict[topic]
+        rospy.loginfo(f"Service '~predict_grasps' is ready for arm '{self.arm_id}'.")
 
     def handle_predict_grasps(self, req):
         """
-        Service handler to perform grasp prediction for a given arm.
+        Service handler to perform grasp prediction.
         """
-        arm_id = req.arm_id
-        text_prompt = req.text_prompt
-        rospy.loginfo(f"Received grasp prediction request for arm: '{arm_id}' with prompt: '{text_prompt}'")
+        text_prompt = req.prompt
+        rospy.loginfo(f"Received grasp prediction request for arm: '{self.arm_id}' with prompt: '{text_prompt}'")
 
         # --- Define topics based on arm_id ---
-        base_topic = f"/mujoco_server/cameras/{arm_id}_camera_depth_frame"
+        base_topic = f"/mujoco_server/cameras/{self.arm_id}_camera_depth_frame"
         depth_topic = f"{base_topic}/depth/image_raw"
         color_topic = f"{base_topic}/rgb/image_raw"
         info_topic = f"{base_topic}/depth/camera_info"
@@ -94,7 +95,7 @@ class GraspPredictionService:
             return GetGraspsResponse(success=False, message=error_msg)
 
         # --- TF Setup ---
-        target_frame = f"{arm_id}_link0"
+        target_frame = f"{self.arm_id}_link0"
         camera_frame = cam_info.header.frame_id
 
         try:
@@ -107,7 +108,7 @@ class GraspPredictionService:
             return GetGraspsResponse(success=False, message=error_msg)
 
         # --- Process and Predict ---
-        rospy.loginfo(f"[{arm_id}] Preparing data for prediction server...")
+        rospy.loginfo(f"[{self.arm_id}] Preparing data for prediction server...")
         
         try:
             depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding="passthrough")
@@ -121,7 +122,7 @@ class GraspPredictionService:
             depth_image = depth_image.astype(np.float32) / 1000.0
 
         request_data = {
-            'arm_id': arm_id,
+            'arm_id': self.arm_id,
             'color': color_image,
             'depth': depth_image,
             'K': cam_info.K,
@@ -130,25 +131,25 @@ class GraspPredictionService:
         }
 
         try:
-            rospy.loginfo(f"[{arm_id}] Sending request to ZMQ server...")
+            rospy.loginfo(f"[{self.arm_id}] Sending request to ZMQ server...")
             self.socket.send_pyobj(request_data)
             response = self.socket.recv_pyobj()
             
             # Robust check for server error
             if response.get('grasps') is None or (response.get('segmentation') is None and response.get('mask') is None):
-                error_msg = f"[{arm_id}] Server returned an error or incomplete data."
+                error_msg = f"[{self.arm_id}] Server returned an error or incomplete data."
                 rospy.logerr(error_msg)
                 return GetGraspsResponse(success=False, message=error_msg)
             
             grasps_in_camera_frame = response['grasps']
-            rospy.loginfo(f"[{arm_id}] Received {len(grasps_in_camera_frame)} grasps from server.")
+            rospy.loginfo(f"[{self.arm_id}] Received {len(grasps_in_camera_frame)} grasps from server.")
             
         except Exception as e:
-            error_msg = f"[{arm_id}] ZMQ request failed: {e}"
+            error_msg = f"[{self.arm_id}] ZMQ request failed: {e}"
             rospy.logerr(error_msg)
             # Attempt to reconnect for the next call
             self.socket.close()
-            self.socket = zmq.Context().socket(zmq.REQ)
+            self.socket = self.context.socket(zmq.REQ)
             self.socket.connect(f"tcp://localhost:{self.port}")
             return GetGraspsResponse(success=False, message=error_msg)
             
@@ -159,20 +160,17 @@ class GraspPredictionService:
                 tft.quaternion_matrix(rot)
             )
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
-            error_msg = f"[{arm_id}] TF error looking up transform: {e}"
+            error_msg = f"[{self.arm_id}] TF error looking up transform: {e}"
             rospy.logerr(error_msg)
             return GetGraspsResponse(success=False, message=error_msg)
 
         # --- Publish Grasps ---
-        grasp_pub_topic = f"/{arm_id}/cartesian_impedance_example_controller/equilibrium_pose"
-        grasp_pub = self.get_publisher(grasp_pub_topic, PoseArray, self.grasp_pubs)
-        
         pose_array_msg = PoseArray()
         pose_array_msg.header.stamp = rospy.Time.now()
         pose_array_msg.header.frame_id = target_frame
 
         if len(grasps_in_camera_frame) == 0:
-            rospy.logwarn(f"[{arm_id}] No grasps returned from server. Publishing empty array.")
+            rospy.logwarn(f"[{self.arm_id}] No grasps returned from server. Publishing empty array.")
         else:
             # Transform all valid grasps from camera to target frame
             for grasp_matrix_camera in grasps_in_camera_frame:
@@ -185,21 +183,21 @@ class GraspPredictionService:
                 p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
                 pose_array_msg.poses.append(p)
         
-        grasp_pub.publish(pose_array_msg)
-        rospy.loginfo(f"[{arm_id}] Published {len(pose_array_msg.poses)} grasp poses to '{grasp_pub_topic}'.")
+        pose = PoseStamped(header=pose_array_msg.header, pose=pose_array_msg.poses[0]) if pose_array_msg.poses else None
+        if pose:
+            self.grasp_pub.publish(pose)
+        rospy.loginfo(f"[{self.arm_id}] Published {len(pose_array_msg.poses)} grasp poses to '{self.grasp_pub.name}'.")
         
         # --- Publish Visualization ---
         if self.visualize and response.get('segmentation') is not None:
-            seg_pub_topic = f"~{arm_id}/segmentation"
-            seg_pub = self.get_publisher(seg_pub_topic, Image, self.segmentation_pubs)
             try:
                 seg_img_msg = self.bridge.cv2_to_imgmsg(response['segmentation'], "bgr8")
-                seg_pub.publish(seg_img_msg)
+                self.segmentation_pub.publish(seg_img_msg)
             except CvBridgeError as e:
                 rospy.logwarn(f"Could not publish segmentation image: {e}")
+            self.inferred_poses_pub.publish(pose_array_msg)
 
-
-        success_msg = f"Successfully processed request for {arm_id}. Published {len(pose_array_msg.poses)} grasps."
+        success_msg = f"Successfully processed request for {self.arm_id}. Published {len(pose_array_msg.poses)} grasps."
         return GetGraspsResponse(success=True, message=success_msg)
 
 if __name__ == '__main__':
