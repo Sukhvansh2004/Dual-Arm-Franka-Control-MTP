@@ -29,15 +29,15 @@ class GraspGenServiceNode:
         # --- Arm and Port configuration ---
         self.arm_id = rospy.get_param('~arm_id', 'L_panda')
         port = rospy.get_param('~port', 5557)
-        rospy.loginfo(f"Starting GraspGen Service for arm: '{self.arm_id}' on port {port}.")
+        rospy.loginfo(f"[{rospy.get_name()}] Starting GraspGen Service for arm: '{self.arm_id}' on port {port}.")
 
         # --- ZMQ Setup ---
-        rospy.loginfo(f"Connecting to GraspGen server on tcp://localhost:{port}...")
+        rospy.loginfo(f"[{rospy.get_name()}] Connecting to GraspGen server on tcp://localhost:{port}...")
         context = zmq.Context()
         self.socket = context.socket(zmq.REQ)
         self.socket.connect(f"tcp://localhost:{port}")
         self.zmq_lock = threading.Lock()
-        rospy.loginfo(f"Connected to tcp://localhost:{port}")
+        rospy.loginfo(f"[{rospy.get_name()}] Connected to tcp://localhost:{port}")
 
         self.bridge = CvBridge()
 
@@ -55,18 +55,18 @@ class GraspGenServiceNode:
         self.prompt_pub = rospy.Publisher('fastsam_client_node/fastsam/prompt', String, queue_size=1, latch=True)
 
         # --- Advertise the ROS Service ---
-        service_name = f"get_grasps"
+        service_name = f"~get_grasps"
         rospy.Service(service_name, GetGrasps, self.handle_grasp_request)
-        rospy.loginfo(f"Advertised grasp service at: {rospy.resolve_name(service_name)}")
+        rospy.loginfo(f"[{rospy.get_name()}] Advertised grasp service at: {rospy.resolve_name(service_name)}")
 
-        rospy.loginfo("GraspGen service node is ready.")
+        rospy.loginfo(f"[{rospy.get_name()}] GraspGen service node is ready.")
 
     def handle_grasp_request(self, req):
-        rospy.loginfo(f"Grasp request received for arm '{self.arm_id}' with prompt: '{req.prompt}'")
+        rospy.loginfo(f"[{rospy.get_name()}] Grasp request received for arm '{self.arm_id}' with prompt: '{req.prompt}'")
 
         # --- 1. Publish the prompt to the FastSAM node ---
         self.prompt_pub.publish(String(data=req.prompt))
-        rospy.loginfo(f"Prompt sent to '{self.prompt_pub.name}'. Waiting for segmentation...")
+        rospy.loginfo(f"[{rospy.get_name()}] Prompt sent to '{self.prompt_pub.name}'. Waiting for segmentation...")
         # Add a small delay to ensure the fastsam_node has time to process and publish
         rospy.sleep(0.5) 
 
@@ -78,13 +78,13 @@ class GraspGenServiceNode:
         mask_topic = "fastsam_client_node/fastsam/mask" 
 
         try:
-            rospy.loginfo(f"Waiting for sensor data and segmentation mask on topic {rospy.resolve_name(mask_topic)}...")
+            rospy.loginfo(f"[{rospy.get_name()}] Waiting for sensor data and segmentation mask on topic {rospy.resolve_name(mask_topic)}...")
             depth_msg = rospy.wait_for_message(depth_topic, Image, timeout=5.0)
             cam_info = rospy.wait_for_message(info_topic, CameraInfo, timeout=5.0)
             mask_msg = rospy.wait_for_message(mask_topic, Image, timeout=10.0) # Longer timeout for segmentation
-            rospy.loginfo("Received all required data.")
+            rospy.loginfo(f"[{rospy.get_name()}] Received all required data.")
         except rospy.ROSException as e:
-            error_msg = f"Failed to get required data: {e}"
+            error_msg = f"[{rospy.get_name()}] Failed to get required data: {e}"
             rospy.logerr(error_msg)
             return GetGraspsResponse(grasps=PoseArray(), success=False, message=error_msg)
 
@@ -93,11 +93,11 @@ class GraspGenServiceNode:
             depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding="passthrough")
             mask_image = self.bridge.imgmsg_to_cv2(mask_msg, "mono8")
         except CvBridgeError as e:
-            rospy.logerr(f"CV Bridge error: {e}")
+            rospy.logerr(f"[{rospy.get_name()}] CV Bridge error: {e}")
             return GetGraspsResponse(grasps=PoseArray(), success=False, message=str(e))
         
         if np.sum(mask_image) == 0:
-            rospy.logwarn("Received an empty mask from FastSAM. Aborting grasp prediction.")
+            rospy.logwarn(f"[{rospy.get_name()}] Received an empty mask from FastSAM. Aborting grasp prediction.")
             return GetGraspsResponse(grasps=PoseArray(), success=False, message="Segmentation failed (empty mask).")
 
         if depth_image.dtype == np.uint16:
@@ -114,16 +114,16 @@ class GraspGenServiceNode:
         # --- 5. Send Request to GraspGen Server ---
         with self.zmq_lock:
             try:
-                rospy.loginfo("Sending request to GraspGen server...")
+                rospy.loginfo(f"[{rospy.get_name()}] Sending request to GraspGen server...")
                 self.socket.send_pyobj(request_data)
                 final_grasps = self.socket.recv_pyobj()
-                rospy.loginfo(f"Received {len(final_grasps)} grasps from server.")
+                rospy.loginfo(f"[{rospy.get_name()}] Received {len(final_grasps)} grasps from server.")
             except Exception as e:
-                rospy.logerr(f"ZMQ request failed: {e}")
+                rospy.logerr(f"[{rospy.get_name()}] ZMQ request failed: {e}")
                 return GetGraspsResponse(grasps=PoseArray(), success=False, message=str(e))
 
         if len(final_grasps) == 0:
-            rospy.logwarn("No grasps returned from server.")
+            rospy.logwarn(f"[{rospy.get_name()}] No grasps returned from server.")
             return GetGraspsResponse(grasps=PoseArray(), success=False, message="No grasps found.")
 
         # --- 6. Convert to ROS Response ---

@@ -17,12 +17,12 @@ class FastSAMClientNode:
         port = rospy.get_param('~port', 5556)
         
         # --- ZMQ Setup ---
-        rospy.loginfo(f"Connecting to FastSAM server on tcp://localhost:{port}...")
+        rospy.loginfo(f"[{rospy.get_name()}] Connecting to FastSAM server on tcp://localhost:{port}...")
         context = zmq.Context()
         self.socket = context.socket(zmq.REQ)
         self.socket.connect(f"tcp://localhost:{port}")
         self.zmq_lock = threading.Lock()
-        rospy.loginfo(f"Connected to tcp://localhost:{port}")
+        rospy.loginfo(f"[{rospy.get_name()}] Connected to tcp://localhost:{port}")
         
         self.bridge = CvBridge()
         self.text_prompt = "a wooden hammer" # Default prompt
@@ -40,20 +40,20 @@ class FastSAMClientNode:
         self.image_sub = rospy.Subscriber(image_topic, Image, self.image_callback, queue_size=1, buff_size=2**24)
         self.prompt_sub = rospy.Subscriber("~fastsam/prompt", String, self.prompt_callback, queue_size=1)
 
-        rospy.loginfo(f"Subscribed to image topic: {image_topic}")
-        rospy.loginfo(f"Listening for prompts on: {rospy.resolve_name('~fastsam/prompt')}")
-        rospy.loginfo("FastSAM client node running.")
+        rospy.loginfo(f"[{rospy.get_name()}] Subscribed to image topic: {image_topic}")
+        rospy.loginfo(f"[{rospy.get_name()}] Listening for prompts on: {rospy.resolve_name('~fastsam/prompt')}")
+        rospy.loginfo(f"[{rospy.get_name()}] FastSAM client node running.")
 
     def prompt_callback(self, msg):
         with self.prompt_lock:
             self.text_prompt = msg.data
-            rospy.loginfo(f"Received new prompt: '{self.text_prompt}'")
+            rospy.loginfo(f"[{rospy.get_name()}] Received new prompt: '{self.text_prompt}'")
 
     def image_callback(self, msg):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
-            rospy.logerr(f"CV Bridge error: {e}")
+            rospy.logerr(f"[{rospy.get_name()}] CV Bridge error: {e}")
             return
             
         with self.prompt_lock:
@@ -66,11 +66,11 @@ class FastSAMClientNode:
                 self.socket.send_pyobj(request)
                 response = self.socket.recv_pyobj()
             except Exception as e:
-                rospy.logerr(f"ZMQ request failed: {e}")    
+                rospy.logerr(f"[{rospy.get_name()}] ZMQ request failed: {e}")    
                 return
         
         if response.get('mask') is None:
-            rospy.logwarn("FastSAM server returned an error or empty response.")
+            rospy.logwarn(f"[{rospy.get_name()}] FastSAM server returned an error or empty response.")
             return
 
         try:
@@ -84,7 +84,7 @@ class FastSAMClientNode:
             self.viz_pub.publish(viz_msg)
             
         except CvBridgeError as e:
-            rospy.logerr(f"CV Bridge error during republishing: {e}")
+            rospy.logerr(f"[{rospy.get_name()}] CV Bridge error during republishing: {e}")
             
 if __name__ == "__main__":
     try:
