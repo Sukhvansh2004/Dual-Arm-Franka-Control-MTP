@@ -5,7 +5,7 @@ import numpy as np
 import tf.transformations as tft
 import tf
 import zmq
-import cv2
+import cv2 # type: ignore
 import sys
 
 # --- ROS Imports ---

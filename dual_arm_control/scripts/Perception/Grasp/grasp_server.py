@@ -1,15 +1,15 @@
 #!/home/sukhvansh/anaconda3/envs/GraspGen/bin/ python
 
 import numpy as np
-import torch
+import torch # type: ignore
 import tf.transformations as tft
-import cv2
 import zmq
 import sys
 import traceback
+import argparse
 
 # --- All your GraspGen/FastSAM imports ---
-GRASPGEN_PATH = '/home/sukhvansh/GraspGen' # Make sure this is correct
+GRASPGEN_PATH = '/home/sukhvansh/franka_ws/src/GraspGen' # Make sure this is correct
 if GRASPGEN_PATH not in sys.path:
     sys.path.append(GRASPGEN_PATH)
 
@@ -40,11 +40,10 @@ def transform_points(points, matrix):
 class GraspPipelineServer:
     """
     Simplified server that runs ONLY GraspGen for a
-    single, hardcoded finger gripper.
+    single, dynamically loaded finger gripper.
     """
     def __init__(self, finger_cfg_path):
-        # --- FastSAM Model is REMOVED ---
-        print(f"Loading HARECODED GraspGen finger model from: {finger_cfg_path}")
+        print(f"Loading GraspGen model from: {finger_cfg_path}")
         self.gripper_cfg = load_grasp_cfg(finger_cfg_path)
         self.gripper_sampler = GraspGenSampler(self.gripper_cfg)
         self.gripper_mesh = get_gripper_info(self.gripper_cfg.data.gripper_name).collision_mesh
@@ -67,18 +66,15 @@ class GraspPipelineServer:
         grasp_thresh = params.get('grasp_threshold', self.grasp_threshold)
         num_grasps = params.get('num_grasps', self.num_grasps)
         collision_thresh = params.get('collision_threshold', self.collision_threshold)
+        top_k = params.get('top_k', -1) # Extract top_k parameter
 
-        # --- 2. Run FastSAM ---
-        # THIS SECTION IS REMOVED. The mask is now an input.
-
-        # --- 3. Create point clouds ---
+        # --- 2. Create point clouds ---
         try:
-            # Convert incoming 8-bit mask (0-255) to boolean (0 or 1)
             bool_mask = (segmentation_mask > 128).astype(np.uint8)
             
             scene_pc, object_pc, _, _ = depth_and_segmentation_to_point_clouds(
                 depth_image=depth_image,
-                segmentation_mask=bool_mask, # Use the converted mask
+                segmentation_mask=bool_mask,
                 fx=fx, fy=fy, cx=cx, cy=cy,
                 target_object_id=1,
                 remove_object_from_scene=True
@@ -91,7 +87,7 @@ class GraspPipelineServer:
             print("[Server] No object points found from mask.")
             return np.array([])
 
-        # --- 4. Filter object point cloud (MEMORY FIX) ---
+        # --- 3. Filter object point cloud ---
         if object_pc.shape[0] > self.max_object_points:
             print(f"[Server] Object PC too large ({object_pc.shape[0]} points). Downsampling to {self.max_object_points}...")
             indices = np.random.choice(object_pc.shape[0], self.max_object_points, replace=False)
@@ -105,9 +101,9 @@ class GraspPipelineServer:
             print("[Server] Not enough points after filtering.")
             return np.array([])
 
-        # --- 5. Run GraspGen Inference (Hardcoded for finger gripper) ---
+        # --- 4. Run GraspGen Inference ---
         grasps_inferred, grasp_conf_inferred = GraspGenSampler.run_inference(
-            pc_filtered, self.gripper_sampler, grasp_thresh, num_grasps, topk_num_grasps=-1
+            pc_filtered, self.gripper_sampler, grasp_thresh, num_grasps, topk_num_grasps=top_k
         )
 
         if len(grasps_inferred) == 0:
@@ -116,7 +112,7 @@ class GraspPipelineServer:
             
         grasps_inferred = grasps_inferred.cpu().numpy()
 
-        # --- 6. Collision Filtering (ATTRIBUTE_ERROR FIX) ---
+        # --- 5. Collision Filtering ---
         T_subtract_pc_mean = tft.translation_matrix(-pc_filtered.mean(axis=0))
         grasps_centered = np.array([T_subtract_pc_mean @ g for g in grasps_inferred])
         
@@ -149,18 +145,44 @@ class GraspPipelineServer:
         print(f"[Server] Found {len(final_grasps)} collision-free grasps.")
         return final_grasps
 
-# --- Main execution (Simplified) ---
+# --- Main execution (Now with arguments) ---
 if __name__ == "__main__":
-    # --- HARDCODED CONFIG ---
-    FINGER_CONFIG = "/home/sukhvansh/GraspGenModels/checkpoints/graspgen_franka_panda.yml"
+    # --- CONFIG PATHS ---
+    # Assumes GraspGenModels is in the same src directory
+    FINGER_CONFIG = "/home/sukhvansh/franka_ws/src/GraspGenModels/checkpoints/graspgen_franka_panda.yml"
+    SUCTION_CONFIG = "/home/sukhvansh/franka_ws/src/GraspGenModels/checkpoints/graspgen_single_suction_cup_30mm.yml"
+
+    parser = argparse.ArgumentParser(description="Run GraspGen ZMQ Server for a specific gripper type.")
+    parser.add_argument(
+        'gripper_type', 
+        type=str, 
+        choices=['finger', 'suction'],
+        help="The type of gripper model to load ('finger' or 'suction')."
+    )
+    parser.add_argument(
+        '--port', 
+        type=int, 
+        default=5557,
+        help="The TCP port to bind the ZMQ server to (default: 5557)."
+    )
+    args = parser.parse_args()
     
-    pipeline = GraspPipelineServer(FINGER_CONFIG)
+    # --- Select config path based on arg ---
+    if args.gripper_type == 'finger':
+        config_path = FINGER_CONFIG
+        print(f"Initializing server with FINGER gripper: {config_path}")
+    elif args.gripper_type == 'suction':
+        config_path = SUCTION_CONFIG
+        print(f"Initializing server with SUCTION gripper: {config_path}")
+    
+    pipeline = GraspPipelineServer(config_path)
     
     # Setup ZMQ
     context = zmq.Context()
     socket = context.socket(zmq.REP) 
-    socket.bind("tcp://*:5557") # <-- NEW PORT
-    print("GraspGen server (Test Mode) started on tcp://*:5557")
+    socket_address = f"tcp://*:{args.port}"
+    socket.bind(socket_address)
+    print(f"GraspGen server started on {socket_address}")
 
     while True:
         try:
@@ -171,7 +193,7 @@ if __name__ == "__main__":
             
             final_grasps = pipeline.run_prediction(
                 depth_image=request['depth'],
-                segmentation_mask=request['mask'], # Mask is now an input
+                segmentation_mask=request['mask'],
                 K=request['K'],
                 params=request['params']
             )

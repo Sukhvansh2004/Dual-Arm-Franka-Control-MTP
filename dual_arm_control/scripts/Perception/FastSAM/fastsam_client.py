@@ -4,43 +4,50 @@ import rospy
 import zmq
 import numpy as np
 import threading
-import cv2
+import cv2 # type: ignore
 
 from sensor_msgs.msg import Image
+from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
 
 class FastSAMClientNode:
     def __init__(self):
         rospy.init_node('fastsam_client_node')
         
+        port = rospy.get_param('~port', 5556)
+        
         # --- ZMQ Setup ---
-        rospy.loginfo("Connecting to FastSAM server...")
+        rospy.loginfo(f"Connecting to FastSAM server on tcp://localhost:{port}...")
         context = zmq.Context()
         self.socket = context.socket(zmq.REQ)
-        self.socket.connect("tcp://localhost:5556")
+        self.socket.connect(f"tcp://localhost:{port}")
         self.zmq_lock = threading.Lock()
-        rospy.loginfo("Connected to tcp://localhost:5556")
+        rospy.loginfo(f"Connected to tcp://localhost:{port}")
         
         self.bridge = CvBridge()
+        self.text_prompt = "a wooden hammer" # Default prompt
+        self.prompt_lock = threading.Lock()
 
         # --- Get Topic Params ---
         default_topic = "/mujoco_server/cameras/L_panda_camera_depth_frame/rgb/image_raw"
         image_topic = rospy.get_param("~image_topic", default_topic)
-        
-        # --- NEW: VISUALIZATION PARAM ---
-        self.visualize = rospy.get_param("~visualize_cv2", True)
-        if self.visualize:
-            rospy.loginfo("CV2 visualization is ON.")
 
         # --- Publishers ---
         self.mask_pub = rospy.Publisher("~fastsam/mask", Image, queue_size=1)
         self.viz_pub = rospy.Publisher("~fastsam/visualization", Image, queue_size=1)
         
-        # --- Subscriber ---
+        # --- Subscribers ---
         self.image_sub = rospy.Subscriber(image_topic, Image, self.image_callback, queue_size=1, buff_size=2**24)
-        
-        rospy.loginfo(f"Subscribed to {image_topic}")
+        self.prompt_sub = rospy.Subscriber("~fastsam/prompt", String, self.prompt_callback, queue_size=1)
+
+        rospy.loginfo(f"Subscribed to image topic: {image_topic}")
+        rospy.loginfo(f"Listening for prompts on: {rospy.resolve_name('~fastsam/prompt')}")
         rospy.loginfo("FastSAM client node running.")
+
+    def prompt_callback(self, msg):
+        with self.prompt_lock:
+            self.text_prompt = msg.data
+            rospy.loginfo(f"Received new prompt: '{self.text_prompt}'")
 
     def image_callback(self, msg):
         try:
@@ -49,12 +56,10 @@ class FastSAMClientNode:
             rospy.logerr(f"CV Bridge error: {e}")
             return
             
-        # --- NEW: SHOW LIVE FEED ---
-        if self.visualize:
-            cv2.imshow("Live Feed (Client)", cv_image)
-            cv2.waitKey(1) # This is crucial for updating the window
+        with self.prompt_lock:
+            current_prompt = self.text_prompt
             
-        request = {'image': cv_image, 'text_prompt': 'Wooden Hammer with metal head'}
+        request = {'image': cv_image, 'text_prompt': current_prompt}
         
         with self.zmq_lock:
             try:
@@ -64,8 +69,8 @@ class FastSAMClientNode:
                 rospy.logerr(f"ZMQ request failed: {e}")    
                 return
         
-        if response['mask'] is None:
-            rospy.logwarn("FastSAM server returned an error.")
+        if response.get('mask') is None:
+            rospy.logwarn("FastSAM server returned an error or empty response.")
             return
 
         try:
@@ -73,14 +78,10 @@ class FastSAMClientNode:
             mask_msg.header = msg.header
             self.mask_pub.publish(mask_msg)
             
-            viz_image = response['viz'] # This is the BGR image
+            viz_image = response['viz']
             viz_msg = self.bridge.cv2_to_imgmsg(viz_image, "bgr8")
             viz_msg.header = msg.header
             self.viz_pub.publish(viz_msg)
-            
-            if self.visualize:
-                cv2.imshow("FastSAM Result (Client)", viz_image)
-                cv2.waitKey(1) # Also crucial
             
         except CvBridgeError as e:
             rospy.logerr(f"CV Bridge error during republishing: {e}")
@@ -92,5 +93,4 @@ if __name__ == "__main__":
     except rospy.ROSInterruptException:
         pass
     finally:
-        # --- NEW: Clean up windows ---
         cv2.destroyAllWindows()

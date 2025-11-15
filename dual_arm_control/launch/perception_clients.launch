@@ -1,0 +1,59 @@
+<launch>
+    <!-- 
+        Launch file for the DUAL ARM v2 perception pipeline.
+        This starts the client nodes for both L_panda and R_panda.
+        It requires the external ZMQ servers to be running (use start_perception_servers.sh).
+    -->
+
+    <!-- Port Configuration for ZMQ Servers -->
+    <arg name="fastsam_server_port"     default="5555"/>
+    <arg name="left_grasp_server_port"  default="5557"/>
+    <arg name="right_grasp_server_port" default="5558"/>
+
+    <!-- General Parameters -->
+    <arg name="visualize" default="true" doc="Whether to show CV2 visualization windows."/>
+    <arg name="top_k"     default="50"   doc="Number of top grasps to return (-1 for all)."/>
+
+    <!-- ===================================================================================== -->
+    <!-- Left Arm Group -->
+    <!-- ===================================================================================== -->
+    <group ns="L_panda">
+        <arg name="arm_id" value="L_panda"/>
+        
+        <!-- FastSAM Client for the Left Arm -->
+        <node name="fastsam_client_node" pkg="dual_arm_control" type="fastsam_client.py" output="screen">
+            <param name="image_topic" value="/mujoco_server/cameras/$(arg arm_id)_camera_depth_frame/rgb/image_raw" />
+            <param name="visualize"   value="$(arg visualize)" />
+            <param name="port"        value="$(arg fastsam_server_port)" />
+        </node>
+
+        <!-- GraspGen Service for the Left Arm -->
+        <node name="graspgen_service_node" pkg="dual_arm_control" type="grasp_client.py" output="screen">
+            <param name="arm_id" value="$(arg arm_id)" />
+            <param name="port"   value="$(arg left_grasp_server_port)" />
+            <param name="top_k"  value="$(arg top_k)" />
+        </node>
+    </group>
+
+    <!-- ===================================================================================== -->
+    <!-- Right Arm Group -->
+    <!-- ===================================================================================== -->
+    <group ns="R_panda">
+        <arg name="arm_id" value="R_panda"/>
+
+        <!-- FastSAM Client for the Right Arm -->
+        <node name="fastsam_client_node" pkg="dual_arm_control" type="fastsam_client.py" output="screen">
+            <param name="image_topic" value="/mujoco_server/cameras/$(arg arm_id)_camera_depth_frame/rgb/image_raw" />
+            <param name="visualize"   value="$(arg visualize)" />
+            <param name="port"        value="$(arg fastsam_server_port)" />
+        </node>
+
+        <!-- GraspGen Service for the Right Arm -->
+        <node name="graspgen_service_node" pkg="dual_arm_control" type="grasp_client.py" output="screen">
+            <param name="arm_id" value="$(arg arm_id)" />
+            <param name="port"   value="$(arg right_grasp_server_port)" />
+            <param name="top_k"  value="$(arg top_k)" />
+        </node>
+    </group>
+
+</launch>

@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 import numpy as np
-import torch
+import torch # type: ignore
 import tf.transformations as tft
-import cv2
+import cv2 # type: ignore
 import zmq # Import ZMQ
 import sys
 import traceback
@@ -22,7 +22,7 @@ try:
         filter_colliding_grasps
     )
     from grasp_gen.robot import get_gripper_info
-    from ultralytics import FastSAM
+    from ultralytics import FastSAM # type: ignore
 except ImportError as e:
     print(f"Error importing a library: {e}")
     print("Please run this in your 'GraspGen' conda environment.")
