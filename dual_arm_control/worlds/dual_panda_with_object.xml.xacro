@@ -30,7 +30,7 @@
 
     <xacro:include filename="$(find dual_arm_control)/worlds/object.xacro" />
 
-    <xacro:include filename="$(find dual_arm_control)/YCB_Dataset/ycb/windex_bottle.xml" />
+    <xacro:include filename="$(find dual_arm_control)/YCB_Dataset/ycb/master_chef_can.xml" />
 
     <visual>
         <headlight ambient="0.4 0.4 0.4" diffuse="0.4 0.4 0.4" specular="0.0 0.0 0.0" active="1" />

@@ -76,13 +76,13 @@ class GraspPipelineServer:
         collision_thresh = params.get('collision_threshold', self.collision_threshold)
         max_scene_pts = params.get('max_scene_points', self.max_scene_points)
         collision_check = params.get('collision_check', True)
-        top_k = params.get('top_k', 1)
+        top_k = params.get('top_k', -1)
 
         # Create an empty mask template for failure cases
         empty_mask = np.zeros((color_image.shape[0], color_image.shape[1]), dtype=np.uint8)
         empty_return = {'grasps': np.array([]), 'mask': empty_mask}
 
-        # --- 2. Run FastSAM (UPDATED LOGIC) ---
+        # --- 2. Run FastSAM ---
         predict_args = {
             'source': color_image,
             'device': 'cuda',
