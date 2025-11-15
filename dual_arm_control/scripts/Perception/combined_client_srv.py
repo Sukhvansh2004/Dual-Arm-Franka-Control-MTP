@@ -219,8 +219,14 @@ class GraspPredictionService:
             # Also publish all inferred poses for RViz
             self.inferred_poses_pub.publish(pose_array_msg)
 
-        success_msg = f"Successfully processed request for {self.arm_id}. Published {len(pose_array_msg.poses)} grasps."
-        return GetGraspsResponse(success=True, message=success_msg)
+        if len(pose_array_msg.poses) == 0:
+            success_msg = f"No grasps found for {self.arm_id}."
+            success = False
+        else:
+            success_msg = f"Successfully processed request for {self.arm_id}. Published {len(pose_array_msg.poses)} grasps."
+            success = True
+
+        return GetGraspsResponse(success=success, message=success_msg)
 
 if __name__ == '__main__':
     try:
