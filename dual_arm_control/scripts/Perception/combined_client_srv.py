@@ -47,6 +47,24 @@ class GraspPredictionService:
         self.tf_listener = tf.TransformListener()
         self.bridge = CvBridge()
 
+        self.gripper_type = rospy.get_param('~gripper_type', 'finger') # 'finger' or 'suction'
+        _corr_trans = [0.0, 0.0, 0.0]
+
+        if self.gripper_type == 'suction':
+            rospy.loginfo("Using SUCTION gripper correction (quat [1,0,0,0]).")
+            _corr_quat = [1.0, 0.0, 0.0, 0.0]
+        elif self.gripper_type == 'finger':
+            rospy.loginfo("Using FINGER gripper correction (quat [0,0,-0.7,0.7]).")
+            _corr_quat = [0.0, 0.0, -0.7071, 0.7071]
+        else:
+            rospy.logfatal(f"Unknown gripper_type '{self.gripper_type}'")
+            sys.exit(1)
+
+        self.T_grasp_correction = tft.concatenate_matrices(
+            tft.translation_matrix(_corr_trans),
+            tft.quaternion_matrix(_corr_quat)
+        )
+
         # --- Get ROS Params for grasp prediction ---
         self.params = {
             'collision_threshold': rospy.get_param('~collision_threshold', 0.02),
@@ -155,7 +173,7 @@ class GraspPredictionService:
             
         try:
             (trans, rot) = self.tf_listener.lookupTransform(target_frame, camera_frame, rospy.Time(0))
-            T_camera_to_target = tft.concatenate_matrices(
+            T_target_camera = tft.concatenate_matrices(
                 tft.translation_matrix(trans),
                 tft.quaternion_matrix(rot)
             )
@@ -174,15 +192,18 @@ class GraspPredictionService:
         else:
             # Transform all valid grasps from camera to target frame
             for grasp_matrix_camera in grasps_in_camera_frame:
-                grasp_matrix_target = T_camera_to_target @ grasp_matrix_camera
+                
+                grasp_matrix_in_target = T_target_camera @ grasp_matrix_camera @ self.T_grasp_correction
                 
                 p = Pose()
-                trans = tft.translation_from_matrix(grasp_matrix_target)
-                quat = tft.quaternion_from_matrix(grasp_matrix_target)
+                trans = tft.translation_from_matrix(grasp_matrix_in_target)
+                quat = tft.quaternion_from_matrix(grasp_matrix_in_target)
+
                 p.position.x, p.position.y, p.position.z = trans
                 p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
                 pose_array_msg.poses.append(p)
         
+        # Publish the first valid grasp (if any) to the controller topic
         pose = PoseStamped(header=pose_array_msg.header, pose=pose_array_msg.poses[0]) if pose_array_msg.poses else None
         if pose:
             self.grasp_pub.publish(pose)
@@ -195,6 +216,7 @@ class GraspPredictionService:
                 self.segmentation_pub.publish(seg_img_msg)
             except CvBridgeError as e:
                 rospy.logwarn(f"Could not publish segmentation image: {e}")
+            # Also publish all inferred poses for RViz
             self.inferred_poses_pub.publish(pose_array_msg)
 
         success_msg = f"Successfully processed request for {self.arm_id}. Published {len(pose_array_msg.poses)} grasps."

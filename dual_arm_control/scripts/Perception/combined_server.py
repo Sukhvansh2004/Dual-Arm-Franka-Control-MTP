@@ -88,7 +88,7 @@ class GraspPipelineServer:
             'device': 'cuda',
             'retina_masks': True,
             'imgsz': 640,
-            'conf': 0.4,
+            'conf': 0.8,
             'iou': 0.9,
             'verbose': False
         }

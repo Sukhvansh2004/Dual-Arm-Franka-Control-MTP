@@ -21,7 +21,7 @@ class GraspPredictionNode:
     and transforms the resulting grasps into the '{arm_id}_link0' frame.
     """
     def __init__(self):
-        rospy.init_node('grasp_prediction_node_client', anonymous=True)
+        rospy.init_node('grasp_prediction_node_client')
         rospy.loginfo("Starting Grasp Prediction Node (ZMQ Client).")
 
         # --- ZMQ Setup ---
@@ -33,7 +33,28 @@ class GraspPredictionNode:
         socket_address = f"tcp://localhost:{self.port}"
         self.socket.connect(socket_address)
         rospy.loginfo(f"Connected to {socket_address}")
-        
+
+        self.gripper_type = rospy.get_param('~gripper_type', 'finger') # 'finger' or 'suction'
+        _corr_trans = [0.0, 0.0, 0.0]
+
+        if self.gripper_type == 'suction':
+            rospy.loginfo("Using SUCTION gripper correction (180-deg X rotation).")
+            # Quaternion for 180-degree rotation around X-axis
+            # [x,y,z,w] -> [1,0,0,0]
+            _corr_quat = [1.0, 0.0, 0.0, 0.0]
+        elif self.gripper_type == 'finger':
+            rospy.loginfo("Using FINGER gripper correction (-90-deg Z rotation).")
+            # Quaternion for -90-degree rotation around Z-axis
+            _corr_quat = [0.0, 0.0, -0.7071, 0.7071]
+        else:
+            rospy.logfatal(f"Unknown gripper_type '{self.gripper_type}'")
+            sys.exit(1)
+
+        self.T_grasp_correction = tft.concatenate_matrices(
+            tft.translation_matrix(_corr_trans),
+            tft.quaternion_matrix(_corr_quat)
+        )
+
         # --- ADDED: TF Listener ---
         self.tf_listener = tf.TransformListener()
 
@@ -44,14 +65,14 @@ class GraspPredictionNode:
             'num_grasps': rospy.get_param('~num_grasps', 200),
             'grasp_threshold': rospy.get_param('~grasp_threshold', 0.8),
             'collision_check': rospy.get_param('~collision_check', True),
-            'top_k': rospy.get_param('~top_k', 1)
+            'top_k': rospy.get_param('~top_k', 50)
         }
         rospy.loginfo(f"Initialized with params {self.params}")
 
         # --- Hardcoded text prompt for testing ---
-        self.text_prompt = "Wooden Block"
+        self.text_prompt = "Windex bottle"
         if self.text_prompt:
-             rospy.loginfo(f"Using text prompt: '{self.text_prompt}'")
+            rospy.loginfo(f"Using text prompt: '{self.text_prompt}'")
         
         prediction_hz = rospy.get_param('~prediction_hz', 1)
         self.prediction_interval = rospy.Duration(1.0 / prediction_hz)
@@ -188,7 +209,7 @@ class GraspPredictionNode:
         try:
             # Get the transform from the camera frame to the hand frame
             (trans, rot) = self.tf_listener.lookupTransform(self.target_frame, self.camera_frame, rospy.Time(0))
-            T_camera_to_hand = tft.concatenate_matrices(
+            T_target_camera = tft.concatenate_matrices(
                 tft.translation_matrix(trans),
                 tft.quaternion_matrix(rot)
             )
@@ -209,16 +230,18 @@ class GraspPredictionNode:
             pose_array_msg.header.stamp = rospy.Time.now()
             pose_array_msg.header.frame_id = self.target_frame
             
-            P_camera = grasps_in_camera_frame[0]
-            P_hand = T_camera_to_hand @ P_camera
-            
-            p = Pose()
-            trans = tft.translation_from_matrix(P_hand)
-            quat = tft.quaternion_from_matrix(P_hand)
-            p.position.x, p.position.y, p.position.z = trans
-            p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
-            pose_array_msg.poses.append(p)
+            for P_camera in grasps_in_camera_frame:
+                # The grasp correction is applied to the grasp pose in the camera frame.
+                # Then, the corrected grasp pose is transformed into the target frame.
+                P_hand = T_target_camera @ P_camera @ self.T_grasp_correction
+                p = Pose()
+                trans = tft.translation_from_matrix(P_hand)
+                quat = tft.quaternion_from_matrix(P_hand)
                 
+                p.position.x, p.position.y, p.position.z = trans
+                p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
+                pose_array_msg.poses.append(p)
+
             self.grasp_pub.publish(pose_array_msg)
             rospy.loginfo(f"[{self.arm_id}] Published {len(pose_array_msg.poses)} grasp poses IN {self.target_frame} FRAME.")
         

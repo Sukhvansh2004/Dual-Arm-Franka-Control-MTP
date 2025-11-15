@@ -10,6 +10,9 @@
 
   <arg name="arm_id_0" default="L_panda" />
   <arg name="arm_id_1" default="R_panda" />
+
+  <arg name="object_x" default="0.0" />
+  <arg name="object_y" default="0.4" />
   
   <param name="/is_simulation" value="true" />
 
