@@ -52,7 +52,7 @@ class GraspGenServiceNode:
             _corr_quat = [0.0, 0.0, -0.7071, 0.7071]
         elif gripper_type == 'suction':
             rospy.loginfo(f"[{rospy.get_name()}] Using SUCTION gripper correction.")
-            _corr_trans = [0.0, 0.0, 0.105]
+            _corr_trans = [0.0, 0.0, 0.11]
             _corr_quat = [1.0, 0.0, 0.0, 0.0]
         else:
             rospy.logfatal(f"[{rospy.get_name()}] Unknown gripper_type '{gripper_type}'")
