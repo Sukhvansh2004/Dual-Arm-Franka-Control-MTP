@@ -176,7 +176,7 @@ class GraspPipelineServer:
             print("[Server] Not enough points after filtering.")
             return empty_return
 
-        # --- 5. Run GraspGen Inference (Now generic) ---
+        # --- 5. Run GraspGen Inference ---
         grasps_inferred, grasp_conf_inferred = GraspGenSampler.run_inference(
             pc_filtered, self.gripper_sampler, grasp_thresh, num_grasps, topk_num_grasps=top_k
         )

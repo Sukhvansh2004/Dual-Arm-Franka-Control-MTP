@@ -3,25 +3,27 @@
 import rospy
 import numpy as np
 import tf.transformations as tft
+import tf
 import zmq
 import threading
+import sys
 
 # --- ROS Imports ---
 from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import String
-from geometry_msgs.msg import PoseArray, Pose
+from geometry_msgs.msg import PoseArray, Pose, PoseStamped
 from cv_bridge import CvBridge, CvBridgeError
 
 # --- Import the service definition ---
 from dual_arm_control.srv import GetGrasps, GetGraspsResponse
 
-print("ROS, CV Bridge, and ZMQ imported successfully.")
+print("ROS, CV Bridge, TF, and ZMQ imported successfully.")
 
 class GraspGenServiceNode:
     """
     Provides a ROS service to get grasps for a specified arm.
     When called, it prompts a FastSAM node, waits for the resulting mask,
-    and then calls the GraspGen ZMQ server to get grasps.
+    calls the GraspGen ZMQ server, transforms the grasps, and publishes them.
     """
     def __init__(self):
         rospy.init_node('graspgen_service_node')
@@ -40,6 +42,26 @@ class GraspGenServiceNode:
         rospy.loginfo(f"[{rospy.get_name()}] Connected to tcp://localhost:{port}")
 
         self.bridge = CvBridge()
+        self.tf_listener = tf.TransformListener()
+
+        # --- Gripper Correction Setup ---
+        gripper_type = rospy.get_param('~gripper_type', 'finger')
+        if gripper_type == 'finger':
+            rospy.loginfo(f"[{rospy.get_name()}] Using FINGER gripper correction.")
+            _corr_trans = [0.0, 0.0, 0.0]
+            _corr_quat = [0.0, 0.0, -0.7071, 0.7071]
+        elif gripper_type == 'suction':
+            rospy.loginfo(f"[{rospy.get_name()}] Using SUCTION gripper correction.")
+            _corr_trans = [0.0, 0.0, 0.105]
+            _corr_quat = [1.0, 0.0, 0.0, 0.0]
+        else:
+            rospy.logfatal(f"[{rospy.get_name()}] Unknown gripper_type '{gripper_type}'")
+            sys.exit(1)
+
+        self.T_grasp_correction = tft.concatenate_matrices(
+            tft.translation_matrix(_corr_trans),
+            tft.quaternion_matrix(_corr_quat)
+        )
 
         # --- ROS Params for GraspGen ---
         self.params = {
@@ -47,12 +69,13 @@ class GraspGenServiceNode:
             'max_scene_points': rospy.get_param('~max_scene_points', 8192),
             'num_grasps': rospy.get_param('~num_grasps', 200),
             'grasp_threshold': rospy.get_param('~grasp_threshold', 0.8),
-            'top_k': rospy.get_param('~top_k', -1) # New parameter for top_k grasps
+            'top_k': rospy.get_param('~top_k', -1)
         }
         
         # --- Publishers ---
-        # Publisher to send the prompt to the FastSAM node in the same namespace
         self.prompt_pub = rospy.Publisher('fastsam_client_node/fastsam/prompt', String, queue_size=1, latch=True)
+        self.inferred_poses_pub = rospy.Publisher("inferred_grasp_poses", PoseArray, queue_size=1, latch=True)
+        self.single_grasp_pub = rospy.Publisher("cartesian_impedance_example_controller/equilibrium_pose", PoseStamped, queue_size=1, latch=True)
 
         # --- Advertise the ROS Service ---
         service_name = f"~get_grasps"
@@ -86,7 +109,7 @@ class GraspGenServiceNode:
         except rospy.ROSException as e:
             error_msg = f"[{rospy.get_name()}] Failed to get required data: {e}"
             rospy.logerr(error_msg)
-            return GetGraspsResponse(grasps=PoseArray(), success=False, message=error_msg)
+            return GetGraspsResponse(success=False, message=error_msg)
 
         # --- 3. Process data ---
         try:
@@ -94,11 +117,11 @@ class GraspGenServiceNode:
             mask_image = self.bridge.imgmsg_to_cv2(mask_msg, "mono8")
         except CvBridgeError as e:
             rospy.logerr(f"[{rospy.get_name()}] CV Bridge error: {e}")
-            return GetGraspsResponse(grasps=PoseArray(), success=False, message=str(e))
+            return GetGraspsResponse(success=False, message=str(e))
         
         if np.sum(mask_image) == 0:
             rospy.logwarn(f"[{rospy.get_name()}] Received an empty mask from FastSAM. Aborting grasp prediction.")
-            return GetGraspsResponse(grasps=PoseArray(), success=False, message="Segmentation failed (empty mask).")
+            return GetGraspsResponse(success=False, message="Segmentation failed (empty mask).")
 
         if depth_image.dtype == np.uint16:
             depth_image = depth_image.astype(np.float32) / 1000.0
@@ -120,25 +143,62 @@ class GraspGenServiceNode:
                 rospy.loginfo(f"[{rospy.get_name()}] Received {len(final_grasps)} grasps from server.")
             except Exception as e:
                 rospy.logerr(f"[{rospy.get_name()}] ZMQ request failed: {e}")
-                return GetGraspsResponse(grasps=PoseArray(), success=False, message=str(e))
+                return GetGraspsResponse(success=False, message=str(e))
 
         if len(final_grasps) == 0:
             rospy.logwarn(f"[{rospy.get_name()}] No grasps returned from server.")
-            return GetGraspsResponse(grasps=PoseArray(), success=False, message="No grasps found.")
+            # Still publish an empty array so downstream nodes know there are no grasps
+            empty_pose_array = PoseArray()
+            empty_pose_array.header.stamp = rospy.Time.now()
+            empty_pose_array.header.frame_id = f"{self.arm_id}_link0"
+            self.inferred_poses_pub.publish(empty_pose_array)
+            return GetGraspsResponse(success=False, message="No grasps found.")
 
-        # --- 6. Convert to ROS Response ---
+        # --- 6. Transform Grasps to Robot Frame ---
+        target_frame = f"{self.arm_id}_link0"
+        camera_frame = cam_info.header.frame_id
+
+        try:
+            rospy.loginfo(f"[{rospy.get_name()}] Waiting for transform between '{target_frame}' and '{camera_frame}'...")
+            self.tf_listener.waitForTransform(target_frame, camera_frame, rospy.Time(), rospy.Duration(5.0))
+            (trans, rot) = self.tf_listener.lookupTransform(target_frame, camera_frame, rospy.Time(0))
+            T_target_camera = tft.concatenate_matrices(
+                tft.translation_matrix(trans),
+                tft.quaternion_matrix(rot)
+            )
+            rospy.loginfo(f"[{rospy.get_name()}] Transform is available.")
+        except (tf.Exception, tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+            error_msg = f"[{rospy.get_name()}] TF error looking up transform: {e}"
+            rospy.logerr(error_msg)
+            return GetGraspsResponse(success=False, message=error_msg)
+
+        # --- 7. Convert to ROS Response and Publish ---
         pose_array_msg = PoseArray()
-        pose_array_msg.header = depth_msg.header # Publish in the camera frame
+        pose_array_msg.header.stamp = rospy.Time.now()
+        pose_array_msg.header.frame_id = target_frame
         
-        for grasp_matrix in final_grasps:
+        for grasp_matrix_camera in final_grasps:
+            # Apply transforms: base_link <- camera_link <- grasp <- correction
+            grasp_matrix_in_target = T_target_camera @ grasp_matrix_camera @ self.T_grasp_correction
+            
             p = Pose()
-            trans = tft.translation_from_matrix(grasp_matrix)
-            quat = tft.quaternion_from_matrix(grasp_matrix)
+            trans = tft.translation_from_matrix(grasp_matrix_in_target)
+            quat = tft.quaternion_from_matrix(grasp_matrix_in_target)
             p.position.x, p.position.y, p.position.z = trans
             p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = quat
             pose_array_msg.poses.append(p)
-            
-        return GetGraspsResponse(grasps=pose_array_msg, success=True, message="Success")
+        
+        # Publish the full array of transformed grasps
+        self.inferred_poses_pub.publish(pose_array_msg)
+        rospy.loginfo(f"[{rospy.get_name()}] Published {len(pose_array_msg.poses)} grasp poses to '{self.inferred_poses_pub.name}'.")
+
+        # Publish the first valid grasp (if any) to the controller topic
+        if pose_array_msg.poses:
+            first_grasp_pose = PoseStamped(header=pose_array_msg.header, pose=pose_array_msg.poses[0])
+            self.single_grasp_pub.publish(first_grasp_pose)
+            rospy.loginfo(f"[{rospy.get_name()}] Published the first grasp pose to '{self.single_grasp_pub.name}'.")
+
+        return GetGraspsResponse(success=True, message="Success")
 
 if __name__ == '__main__':
     try:
