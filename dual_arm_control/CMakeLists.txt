@@ -43,6 +43,7 @@ catkin_install_python(PROGRAMS
   scripts/gripper_move.py
   scripts/go_to_pose.py
   scripts/teleop_keyboard.py
+  scripts/record_poses.py
   scripts/Perception/FastSAM/fastsam_client.py
   scripts/Perception/FastSAM/fastsam_server.py
   scripts/Perception/Grasp/grasp_client.py

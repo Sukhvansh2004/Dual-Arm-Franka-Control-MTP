@@ -30,7 +30,7 @@
 
     <xacro:include filename="$(find dual_arm_control)/worlds/object.xacro" />
 
-    <xacro:include filename="$(find dual_arm_control)/YCB_Dataset/ycb/master_chef_can.xml" />
+    <!-- <xacro:include filename="$(find dual_arm_control)/YCB_Dataset/ycb/wood_block.xml" /> -->
 
     <visual>
         <headlight ambient="0.4 0.4 0.4" diffuse="0.4 0.4 0.4" specular="0.0 0.0 0.0" active="1" />
@@ -61,7 +61,7 @@
             <xacro:panda_robot name="$(arg arm_id_1)" pos="$(arg x1) $(arg y1) $(arg z1)" rot="$(arg roll1) $(arg pitch1) $(arg yaw1)" />
         </xacro:unless>
 
-        <!-- <xacro:graspable_box name="object_to_grasp" x="$(arg object_x)" y="$(arg object_y)" z="$(arg object_z)" /> -->
+        <xacro:graspable_box name="object_to_grasp" x="0.0" y="0.4" z="0.04" />
     </worldbody>
 
     <xacro:if value="$(arg use_suction_0)">

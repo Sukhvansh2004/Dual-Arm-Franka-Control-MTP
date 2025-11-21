@@ -180,7 +180,7 @@ class GripperController:
             if not rospy.is_shutdown():
                  rospy.logwarn(f"TF exception while updating attached object pose: {e}")
 
-    def _grasp(self, width=0.0, force=10.0, speed=0.1, object_name=None):
+    def _grasp(self, width=0.0, force=80.0, speed=0.1, object_name=None):
         rospy.loginfo(f"Arm '{self.arm_id}' parallel gripper closing.")
         goal = GraspGoal(width=width, force=force, speed=speed)
         goal.epsilon.inner, goal.epsilon.outer = 0.05, 0.05

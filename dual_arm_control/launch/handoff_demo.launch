@@ -42,4 +42,8 @@
     <param name="use_suction_gripper_1" value="$(arg use_suction_gripper_1)" />
   </node>
 
+  <node name="pose_recorder"
+        pkg="dual_arm_control"
+        type="record_poses.py"
+        output="screen" />
 </launch>
