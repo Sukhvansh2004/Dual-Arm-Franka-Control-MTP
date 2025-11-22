@@ -16,7 +16,7 @@ class PoseRecorder:
         self.object_poses = []
         
         # Name of the object in MuJoCo
-        self.object_name = "object_to_grasp"
+        self.object_name = "plate"
 
         self.listener = tf.TransformListener()
 

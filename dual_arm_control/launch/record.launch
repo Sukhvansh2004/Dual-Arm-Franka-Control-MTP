@@ -26,4 +26,9 @@
         </node>
     </group>
 
+    <node name="pose_recorder"
+            pkg="dual_arm_control"
+            type="record_poses.py"
+            output="screen" />
+
 </launch>
