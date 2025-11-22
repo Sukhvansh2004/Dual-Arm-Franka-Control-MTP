@@ -1,17 +1,42 @@
 #!/bin/bash
 
 # This script starts the GraspGen ZMQ servers for the dual arm setup.
-# It launches two instances of the GraspGen server, one for each gripper type.
+# It pulls configuration from ROS Parameters.
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
 # --- Configuration ---
-CONDA_ENV_NAME="GraspGen"
-LEFT_GRIPPER_TYPE="finger"
-RIGHT_GRIPPER_TYPE="suction"
-LEFT_PORT=5557
-RIGHT_PORT=5558
+# IMPORTANT: This must match the 'name' attribute in your launch file
+NODE_NAME="start_graspgen_servers"
+
+echo "--- Fetching ROS Parameters for $NODE_NAME ---"
+
+# Helper to fetch param or exit if missing
+get_param() {
+    local param_key="/$NODE_NAME/$1"
+    local value
+    # rosparam get returns the value. If it fails, the set -e above will stop the script.
+    value=$(rosparam get "$param_key")
+    
+    if [ -z "$value" ] || [ "$value" == "null" ]; then
+        echo "Error: Could not retrieve parameter '$param_key'"
+        exit 1
+    fi
+    echo "$value"
+}
+
+# Fetch values from the parameter server
+CONDA_ENV_NAME=$(get_param "conda_env")
+LEFT_GRIPPER_TYPE=$(get_param "left_gripper")
+RIGHT_GRIPPER_TYPE=$(get_param "right_gripper")
+LEFT_PORT=$(get_param "left_port")
+RIGHT_PORT=$(get_param "right_port")
+
+echo "Configuration Loaded:"
+echo "  Env: $CONDA_ENV_NAME"
+echo "  Left: $LEFT_GRIPPER_TYPE ($LEFT_PORT)"
+echo "  Right: $RIGHT_GRIPPER_TYPE ($RIGHT_PORT)"
 
 # --- Helper Functions ---
 activate_conda_env() {
