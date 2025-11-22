@@ -2,8 +2,10 @@
 import rospy
 import tf
 import numpy as np
-from sensor_msgs.msg import JointState
 import os
+
+# Import MuJoCo services to get object state directly
+from mujoco_ros_msgs.srv import GetBodyState, GetBodyStateRequest
 
 class PoseRecorder:
     def __init__(self):
@@ -12,43 +14,62 @@ class PoseRecorder:
         self.l_panda_poses = []
         self.r_panda_poses = []
         self.object_poses = []
+        
+        # Name of the object in MuJoCo
+        self.object_name = "object_to_grasp"
 
         self.listener = tf.TransformListener()
 
-        self.joint_state_sub = rospy.Subscriber('/mujoco_ros/joint_states', JointState, self.joint_state_callback)
+        # Setup MuJoCo Service to get object pose
+        service_name = '/mujoco_server/get_body_state'
+        rospy.loginfo(f"Waiting for service: {service_name}")
+        rospy.wait_for_service(service_name)
+        self.get_body_state_service = rospy.ServiceProxy(service_name, GetBodyState)
+        rospy.loginfo("Service found. Recorder ready.")
 
         rospy.on_shutdown(self.save_data)
 
         self.rate = rospy.Rate(2)
 
-    def joint_state_callback(self, data):
+    def get_object_pose(self):
+        """
+        Calls MuJoCo service to get [x, y, z, qx, qy, qz, qw] for the object.
+        """
         try:
-            object_joint_index = data.name.index('object_to_grasp_joint')
-            # The object pose is 7 values (x, y, z, qx, qy, qz, qw)
-            pose_start_index = 0
-            for i in range(object_joint_index):
-                if data.name[i].endswith('joint1'): # Floating joints are one entry in the name list but have 7 position values
-                    pose_start_index += 7
-                else:
-                    pose_start_index += 1
-
-            object_pose = data.position[pose_start_index:pose_start_index+7]
-            self.object_poses.append(object_pose)
-        except ValueError:
-            # Joint not found in this message
-            pass
+            req = GetBodyStateRequest(name=self.object_name)
+            res = self.get_body_state_service(req)
+            
+            if res.success:
+                p = res.state.pose.pose.position
+                o = res.state.pose.pose.orientation
+                # Return standard [x, y, z, qx, qy, qz, qw] format
+                return [p.x, p.y, p.z, o.x, o.y, o.z, o.w]
+            else:
+                rospy.logwarn_throttle(2, f"Failed to get state for {self.object_name}: {res.status_message}")
+                return None
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Service call failed: {e}")
+            return None
 
     def run(self):
+        rospy.loginfo("Recording started...")
         while not rospy.is_shutdown():
             try:
-                # Get L_panda pose
+                # 1. Get L_panda pose (TF)
                 (trans_l, rot_l) = self.listener.lookupTransform('/world', '/L_panda_EE', rospy.Time(0))
-                self.l_panda_poses.append(trans_l + rot_l)
-
-                # Get R_panda pose
+                
+                # 2. Get R_panda pose (TF)
                 (trans_r, rot_r) = self.listener.lookupTransform('/world', '/R_panda_EE', rospy.Time(0))
-                self.r_panda_poses.append(trans_r + rot_r)
+                
+                # 3. Get Object pose (MuJoCo Service)
+                obj_pose = self.get_object_pose()
 
+                # Only append if we successfully got data for all three
+                if obj_pose is not None:
+                    self.l_panda_poses.append(trans_l + rot_l)
+                    self.r_panda_poses.append(trans_r + rot_r)
+                    self.object_poses.append(obj_pose)
+                
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 continue
 
@@ -56,14 +77,18 @@ class PoseRecorder:
 
     def save_data(self):
         rospy.loginfo("Saving recorded poses...")
+        # Using absolute path or home dir is safer than './' in ROS nodes
         save_dir = "/home/sukhvansh/pose_recordings"
+        
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
+        # Save as .npy
         np.save(os.path.join(save_dir, 'l_panda_poses.npy'), np.array(self.l_panda_poses))
         np.save(os.path.join(save_dir, 'r_panda_poses.npy'), np.array(self.r_panda_poses))
         np.save(os.path.join(save_dir, 'object_poses.npy'), np.array(self.object_poses))
-        rospy.loginfo("Saved poses to %s", save_dir)
+        
+        rospy.loginfo(f"Saved {len(self.object_poses)} frames to {save_dir}")
 
 
 if __name__ == '__main__':
