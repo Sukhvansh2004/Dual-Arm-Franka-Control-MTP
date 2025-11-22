@@ -69,13 +69,13 @@
     <!-- ===================================================================================== -->
     
     <!-- Start FastSAM Server Script (reads /start_fastsam_servers/* parameters) -->
-    <node name="start_fastsam_servers" pkg="dual_arm_control" type="start_fastsam_servers.sh" output="screen">
+    <node name="start_fastsam_servers" pkg="dual_arm_control" type="start_fastsam_server.sh" output="screen">
         <param name="conda_env" value="$(arg conda_env)" />
         <param name="port"      value="$(arg fastsam_server_port)" />
     </node>
     
     <!-- Start GraspGen Server Script (reads /start_graspgen_servers/* parameters) -->
-    <node name="start_graspgen_servers" pkg="dual_arm_control" type="start_graspgen_servers.sh" output="screen">
+    <node name="start_graspgen_servers" pkg="dual_arm_control" type="start_graspgen_server.sh" output="screen">
         <param name="conda_env"     value="$(arg conda_env)" />
         <param name="left_gripper"  value="$(arg left_gripper)" />
         <param name="right_gripper" value="$(arg right_gripper)" />
