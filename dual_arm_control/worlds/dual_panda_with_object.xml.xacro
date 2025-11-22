@@ -29,6 +29,7 @@
     <xacro:include filename="$(find franka_mujoco)/assets/xacro/panda_suction.mujoco.xacro" />
 
     <xacro:include filename="$(find dual_arm_control)/worlds/object.xacro" />
+    <xacro:include filename="$(find dual_arm_control)/worlds/plate.xacro" />
 
     <!-- <xacro:include filename="$(find dual_arm_control)/YCB_Dataset/ycb/wood_block.xml" /> -->
 
@@ -61,7 +62,9 @@
             <xacro:panda_robot name="$(arg arm_id_1)" pos="$(arg x1) $(arg y1) $(arg z1)" rot="$(arg roll1) $(arg pitch1) $(arg yaw1)" />
         </xacro:unless>
 
-        <xacro:graspable_box name="object_to_grasp" x="0.0" y="0.4" z="0.04" />
+        <!-- <xacro:graspable_box name="object_to_grasp" x="0.0" y="0.4" z="0.04" /> -->
+        <xacro:graspable_plate name="plate" x="0.0" y="0.4" z="0.02" />
+
     </worldbody>
 
     <xacro:if value="$(arg use_suction_0)">
