@@ -38,8 +38,11 @@
     </visual>
 
     <asset>
-        <texture builtin="checker" height="512" name="texplane" rgb1=".2 .3 .4" rgb2=".1 .15 .2" type="2d" width="512" />
-        <material name="MatPlane" reflectance="0.05" shininess="0.01" specular="0.01" texrepeat="1 1" texture="texplane" texuniform="true" />
+        <!-- Modified texture for black and white chessboard pattern -->
+        <!-- rgb1 is Black (0 0 0), rgb2 is White (1 1 1) -->
+        <!-- texrepeat="50 50" creates 50x50 repeats over the 5m plane, making 10cm squares -->
+        <texture builtin="checker" height="512" name="texplane" rgb1="0 0 0" rgb2="1 1 1" type="2d" width="512" />
+        <material name="MatPlane" reflectance="0.05" shininess="0.01" specular="0.01" texrepeat="50 50" texture="texplane" texuniform="true" />
     </asset>
 
     <worldbody>
